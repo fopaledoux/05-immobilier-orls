@@ -583,3 +583,7 @@ def chat(f: FiltresDep, demande: DemandeChat, qui: VisiteurDep):
 
     res = _avec_quota(qui, appel)
     return {"reponse": res.get("reponse"), "outils": res.get("outils", []), **res}
+
+@app.get("/health", tags=["référentiel"])
+def health():
+    return {"status": "ok"}
