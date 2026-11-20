@@ -1,0 +1,443 @@
+/* Immo Loiret · styles structurels (les couleurs suivent le thème Mantine) */
+
+:root {
+  --immo-surface: #fcfcfb;
+  --immo-page: #f9f9f7;
+  --immo-ink: #0b0b0b;
+  --immo-ink-2: #52514e;
+  --immo-muted: #898781;
+  --immo-border: rgba(11, 11, 11, 0.1);
+  --immo-maison: #2a78d6;
+  --immo-appartement: #eb6834;
+  --immo-indicatif: #d6d5ce;
+  --immo-accent-wash: #eaf2fd;
+}
+
+[data-mantine-color-scheme="dark"] {
+  --immo-surface: #1a1a19;
+  --immo-page: #0d0d0d;
+  --immo-ink: #f0efec;
+  --immo-ink-2: #c3c2b7;
+  --immo-muted: #898781;
+  --immo-border: rgba(255, 255, 255, 0.1);
+  --immo-maison: #3987e5;
+  --immo-appartement: #d95926;
+  --immo-indicatif: #4a4a46;
+  --immo-accent-wash: rgba(57, 135, 229, 0.14);
+  --mantine-color-body: var(--immo-page);
+}
+
+body {
+  background: var(--immo-page);
+  color: var(--immo-ink);
+}
+
+[data-mantine-color-scheme] .mantine-Paper-root {
+  background: var(--immo-surface);
+  border-color: var(--immo-border);
+}
+
+/* ---------------------------------------------------------------- header */
+.app-header {
+  background: color-mix(in srgb, var(--immo-surface) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid var(--immo-border) !important;
+}
+
+.header-inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--immo-ink);
+  flex-shrink: 0;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--immo-maison);
+  color: #fff;
+}
+
+.brand-name {
+  display: block;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.brand-tag {
+  display: block;
+  font-size: 11px;
+  color: var(--immo-muted);
+}
+
+.main-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.nav-link {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--immo-ink-2);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+  background: var(--immo-accent-wash);
+  color: var(--immo-ink);
+}
+
+.nav-link--active {
+  background: var(--immo-accent-wash);
+  color: var(--immo-maison);
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .brand > div {
+    display: none;
+  }
+  .header-inner {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .zone-control .mantine-SegmentedControl-label {
+    padding-inline: 8px;
+  }
+  .page-container {
+    padding-inline: 16px;
+    padding-top: 20px;
+  }
+  .stat-tile {
+    padding: 14px 14px;
+  }
+  .stat-value {
+    font-size: 22px;
+  }
+  .stat-label,
+  .stat-detail {
+    font-size: 12px !important;
+  }
+  .chart-card,
+  .controls-card,
+  .method-card,
+  .answer-card {
+    padding: 14px;
+  }
+}
+
+/* ---------------------------------------------------------------- layout */
+.page-container {
+  padding-top: 28px;
+  padding-bottom: 48px;
+  min-height: calc(100vh - 68px - 64px);
+}
+
+.section {
+  margin-top: 20px;
+}
+
+.hero,
+.page-header {
+  margin-bottom: 8px;
+}
+
+.eyebrow {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--immo-maison) !important;
+  margin-bottom: 6px;
+}
+
+.page-title {
+  font-size: clamp(26px, 3.4vw, 38px) !important;
+  letter-spacing: -0.02em;
+  line-height: 1.15 !important;
+}
+
+.page-subtitle {
+  margin-top: 8px;
+  max-width: 760px;
+  font-size: 16px !important;
+  color: var(--immo-ink-2) !important;
+}
+
+.breadcrumbs {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--immo-muted);
+}
+
+.breadcrumbs a {
+  color: var(--immo-maison);
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------- KPI */
+.stat-tile {
+  padding: 18px 20px;
+  border-radius: 14px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-tile--maison::before,
+.stat-tile--appartement::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--immo-maison);
+}
+
+.stat-tile--appartement::before {
+  background: var(--immo-appartement);
+}
+
+.stat-label {
+  font-size: 13px !important;
+  color: var(--immo-ink-2) !important;
+  font-weight: 500 !important;
+}
+
+.stat-value {
+  font-size: 30px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-top: 6px;
+  color: var(--immo-ink);
+}
+
+.stat-value--sm {
+  font-size: 24px;
+  margin-top: 2px;
+}
+
+.stat-detail {
+  font-size: 13px !important;
+  color: var(--immo-muted) !important;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------- answers */
+.answer-card {
+  padding: 20px;
+  border-radius: 14px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.answer-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--immo-accent-wash);
+  color: var(--immo-maison);
+  flex-shrink: 0;
+}
+
+.answer-question {
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
+}
+
+.answer-body {
+  flex: 1;
+  min-height: 96px;
+}
+
+.answer-body p {
+  margin: 0 0 6px;
+}
+
+.answer-headline {
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.answer-headline strong {
+  color: var(--immo-maison);
+}
+
+.answer-detail {
+  font-size: 14px;
+  color: var(--immo-ink-2);
+}
+
+.answer-foot {
+  font-size: 12px;
+  color: var(--immo-muted);
+}
+
+.answer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--immo-maison);
+  text-decoration: none;
+  margin-top: auto;
+}
+
+.answer-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- charts */
+.chart-card,
+.controls-card,
+.method-card {
+  padding: 18px 18px 14px;
+  border-radius: 14px !important;
+  height: 100%;
+}
+
+.chart-card-head {
+  margin-bottom: 8px;
+}
+
+.chart-title {
+  font-weight: 700 !important;
+  font-size: 15px !important;
+}
+
+.chart-subtitle {
+  font-size: 13px !important;
+  color: var(--immo-muted) !important;
+  margin-top: 2px;
+}
+
+.chart-graph {
+  width: 100%;
+}
+
+.scroll-chart {
+  max-height: 520px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.legend-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--immo-muted);
+  margin-top: 8px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.swatch--indicatif {
+  background: var(--immo-indicatif);
+}
+
+.drill-bar {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--immo-surface);
+  border: 1px solid var(--immo-border);
+}
+
+.verdict .mantine-Alert-title {
+  font-size: 16px;
+}
+
+.badge-wrap {
+  white-space: normal !important;
+  height: auto !important;
+  padding-block: 6px !important;
+  text-transform: none !important;
+}
+
+.method-text p,
+.method-text li {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--immo-ink-2);
+}
+
+.method-text ul {
+  padding-left: 18px;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- grid */
+.immo-grid {
+  width: 100%;
+  --ag-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ag-font-size: 13px;
+}
+
+.cell-link {
+  color: var(--immo-maison);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cell-indicatif {
+  color: var(--immo-muted);
+  font-style: italic;
+}
+
+.cell-fiable {
+  color: var(--immo-ink-2);
+}
+
+/* ---------------------------------------------------------------- footer */
+.app-footer {
+  border-top: 1px solid var(--immo-border);
+  padding: 20px 0;
+  font-size: 12px;
+  color: var(--immo-muted);
+}
+
+.app-footer a {
+  color: var(--immo-maison);
+}
+
+/* ---------------------------------------------------------------- filtres */
+.filter-block {
+  padding-bottom: 22px;
+}
+
+.filter-block .mantine-RangeSlider-root {
+  margin-top: 10px;
+}

@@ -1,0 +1,25 @@
+[project]
+name = "immo-loiret"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "dash>=3.2,<4",
+    "dash-ag-grid>=35.3,<36",
+    "dash-iconify>=0.1.2",
+    "dash-mantine-components>=2.3,<3",
+    "flask-caching>=2.3",
+    "gunicorn>=23",
+    "pandas>=2.2,<3",
+    "plotly>=6.3,<7",
+    "pyarrow>=18",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.10.1",
+    "pytest>=9.2.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]

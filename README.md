@@ -1,76 +1,85 @@
-# Cas 5 · Immobilier autour d'Orléans
+# Immo Loiret · où acheter autour d'Orléans, et à quel prix ?
 
-[← les six cas](README.md) · [toutes les données](../../data/projets/LISEZMOI.md)
+Tableau de bord Dash qui aide un couple d'acheteurs à décider **dans quelle commune ou quel quartier
+chercher, pour quel budget**. Il s'appuie sur les 46 022 ventes de logements réellement conclues dans le
+Loiret entre 2021 et 2025 (DVF, DGFiP).
 
-## Le contexte
+Dès l'ouverture, la page d'accueil répond à trois questions :
 
-Chaque vente immobilière en France est enregistrée par l'administration fiscale et publiée : c'est DVF (demandes de valeurs foncières), qu'Etalab republie avec la position de chaque bien. Ici, les ventes d'un seul logement (maison ou appartement) dans le Loiret de 2021 à 2025. Un couple qui veut acheter se demande où chercher avec son budget, et si un prix demandé est raisonnable.
-
-- **Qui utilise l'appli** : un couple qui cherche à acheter
-- **La décision à éclairer** : dans quelle commune ou quel quartier chercher, pour quel budget
-- **Drill-down attendu** : commune, section cadastrale, vente
-
-## Les données
-
-| | |
+| Question | Ce que montre l'appli |
 |---|---|
-| Fichier | [`immobilier.parquet`](../../data/projets/immobilier.parquet) ([télécharger](https://github.com/jlkhermes38/awp-gabarit/raw/main/data/projets/immobilier.parquet)) |
-| Lignes | 46 022 ventes (32 820 maisons, 13 202 appartements), 325 communes |
-| Période | 02/01/2021 → 31/12/2025 |
-| Source | [DVF géolocalisées (Etalab)](https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/) |
-| Licence | Licence Ouverte 2.0 (Etalab) : citer « DGFiP, DVF » |
+| **Quel budget pour une maison de 100 m² ?** | Fourchette de prix, frais de notaire compris, de la commune la moins chère à la plus chère, et nombre de communes accessibles avec 300 000 € |
+| **Où est-ce le moins cher, et le plus cher ?** | Carte du prix médian au m² par commune, maison ou appartement, et écart entre les deux |
+| **Les prix ont-ils baissé depuis la hausse des taux ?** | Variation du €/m² médian et du nombre de ventes entre 2021-22 et 2024-25, commune par commune |
 
-```python
-import pandas as pd
-df = pd.read_parquet("data/projets/immobilier.parquet")
+## Les pages
+
+- **Vue d'ensemble** : chiffres clés, réponses aux trois questions, carte cliquable et tendance sur 12 mois glissants.
+- **Mon budget** : budget (frais de notaire inclus ou non), type, surface et nombre de pièces. Pour chaque commune, la part des ventes comparables qui tenaient dans le budget.
+- **Communes** : carte, comparaison maison et appartement, tableau de toutes les communes.
+- **Fiche commune** (drill-down **commune → section cadastrale → vente**) : prix par section, carte des ventes, tableau des ventes. Une vente sélectionnée est comparée aux ventes similaires (même type, surface à ±20 %).
+- **Tendances** : prix et volumes avant et après 2022, carte des variations, plus fortes baisses et hausses.
+- **Méthodologie** : sources, filtres, choix de calcul et limites des données.
+
+Sur toutes les pages, on peut basculer entre **Orléans Métropole** (vue par défaut) et **tout le Loiret**, ajuster les **filtres de données** (années, prix, surface, €/m²) et passer en **thème sombre**.
+
+## Choix de méthode
+
+- **Médianes, pas moyennes** : quelques ventes très chères ne déforment pas les prix.
+- **Seuil de fiabilité à 30 ventes** : en dessous, une commune ou une section reste en gris et son prix est dit « indicatif ». Le nombre de ventes est toujours affiché.
+- **Frais de notaire** : environ 7,5 % dans l'ancien, déductibles du budget avec une case à cocher.
+- **Avant et après la hausse des taux** : deux périodes de deux ans (2021-22 et 2024-25) pour avoir assez de ventes par commune.
+- **Limites** : DVF ne dit rien de l'état du bien, de l'étage ni du DPE. Les adresses sont retirées (la section cadastrale est le niveau le plus fin) et le prix d'une maison inclut son terrain.
+
+## Lancer en local
+
+Le projet utilise [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+uv run python app.py
 ```
 
-| Colonne | Ce qu'elle contient |
-|---|---|
-| `id_mutation, date_mutation, annee` | identifiant et date de la vente |
-| `valeur_fonciere` | prix de vente, en euros (terrain compris pour une maison) |
-| `type` | « Maison » ou « Appartement » |
-| `surface_reelle_bati` | surface habitable, en m² |
-| `nombre_pieces_principales` | nombre de pièces |
-| `prix_m2` | valeur_fonciere / surface_reelle_bati |
-| `surface_terrain` | surface du terrain, en m² |
-| `code_commune, nom_commune, code_postal` | la commune |
-| `section` | section cadastrale : un quartier, à l'échelle de quelques rues |
-| `longitude, latitude` | position du bien |
+Puis ouvrir http://localhost:8050.
 
+Les contours des communes (`data/communes_loiret.geojson`) sont déjà dans le dépôt. Pour les régénérer :
 
-## À savoir avant de commencer
+```bash
+uv run python scripts/prepare_geo.py
+```
 
-- filtres déjà appliqués : ventes d'un seul logement (une mutation = une ligne), prix 10 k-2 M euros, 9-400 m2, 300-8000 euros/m2. Décidez les vôtres et dites-les dans l'appli
-- DVF ne dit rien de l'état du bien, de l'étage ni du DPE : deux biens au même prix au m² ne se valent pas forcément
-- comparez des médianes, pas des moyennes : quelques ventes chères tirent la moyenne vers le haut
-- une commune avec cinq ventes ne donne pas un prix fiable : affichez le nombre de ventes à côté du prix
-- les adresses ont été retirées : la section cadastrale est le niveau le plus fin
+## Déploiement
 
-## Questions métier possibles
+- **Render** : le fichier `render.yaml` décrit le service (« New › Blueprint » en pointant sur ce dépôt). L'application tourne sous `gunicorn app:server`.
+- **Railway** : le `Procfile` suffit. Railway installe les dépendances depuis `uv.lock` (ou `requirements.txt`).
 
-Des pistes, pas une liste à cocher : votre appli en soutient une ou deux, pour la décision ci-dessus.
+`requirements.txt` est généré par `uv export --no-hashes --no-dev -o requirements.txt`.
 
-1. Quel prix médian au m² par commune, maison contre appartement ?
-2. Avec 250 000 €, quelles communes proposent une maison d'au moins 100 m² ?
-3. Les prix ont-ils baissé depuis la hausse des taux en 2022, et où ?
-4. Où se vend-il le plus de logements (un marché où l'on trouve vite) ?
-5. Dans Orléans, quel écart de prix entre les sections cadastrales ?
-6. Un prix demandé est-il au-dessus ou au-dessous des ventes comparables (même commune, même type, surface proche) ?
-7. Combien coûte une pièce de plus, à surface égale ?
+## Structure
 
-## Pour aller plus loin
+```
+app.py                 # point d'entrée Dash (en-tête, filtres, thème) ; expose `server`
+theme.py               # couleurs, templates Plotly clair/sombre, thème Mantine
+immo/
+  config.py            # constantes métier (seuil, frais, périodes, zones)
+  data.py              # chargement, filtres et agrégats mémoïsés (flask-caching)
+  figures.py           # cartes et graphiques Plotly
+  components.py        # tuiles KPI, cartes de réponse, AgGrid
+  fmt.py               # formatage des nombres à la française
+pages/                 # une page Dash par fichier (dash.page_registry)
+assets/                # CSS et formateurs AG Grid
+data/                  # ventes DVF (parquet) et contours des communes
+scripts/prepare_geo.py # téléchargement et simplification des contours
+```
 
-- **ML** : estimer le prix d'un bien selon la surface, le type et la commune : un formulaire « et si ? »
-- **LLM** : expliquer en clair l'écart entre un prix demandé et les ventes comparables
+## Stack
 
-## Questions ouvertes sur les données
+Dash 3 · Dash Mantine Components · Dash AG Grid · Plotly · pandas · flask-caching · uv
 
-Des questions précises, à trancher avec le fichier, chiffres à l'appui. Les réponses ne sont pas données : c'est votre première exploration.
+## Sources et licences
 
-1. De combien le prix au m² a-t-il bougé entre 2021 et 2025, commune par commune ?
-2. Les petites surfaces sont-elles plus chères au m² ?
-3. Dans quelles communes une maison se vend-elle sous 1 500 €/m² ?
-4. Le nombre de ventes par an baisse-t-il depuis 2022 ?
-5. À surface égale, un grand terrain fait-il monter le prix d'une maison ?
-6. Dans Orléans, quelles sections cadastrales sont les plus chères ?
+- Ventes : **DGFiP, DVF** (demandes de valeurs foncières géolocalisées, Etalab), Licence Ouverte 2.0
+- Contours des communes : IGN Admin Express via [geo.api.gouv.fr](https://geo.api.gouv.fr), Licence Ouverte 2.0
+- Fonds de carte : © OpenStreetMap contributors, © CARTO
+
+Le cahier des charges d'origine est dans [`05-immobilier.md`](05-immobilier.md).
