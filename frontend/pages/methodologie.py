@@ -76,7 +76,7 @@ def layout(**_):
                         "au-dessous. Contrairement à la moyenne, la médiane ne monte pas à cause de quelques "
                         "ventes très chères.\n\n"
                         f"Une médiane calculée sur peu de ventes n'est pas fiable : en dessous de "
-                        f"**{cfg.SEUIL_FIABILITE} ventes**, une commune ou une section reste en gris et son prix est "
+                        f"**{cfg.SEUIL_FIABILITE} ventes**, une commune ou un quartier reste en gris et son prix est "
                         "dit *indicatif*. Le nombre de ventes est toujours affiché à côté du prix.",
                     ),
                     _bloc(
@@ -99,11 +99,23 @@ def layout(**_):
                         "La variation des volumes compare le nombre moyen de ventes **par an**.",
                     ),
                     _bloc(
+                        "Quartiers",
+                        "tabler:map-pin",
+                        "Dans une commune, les prix sont détaillés par **quartier** : ce sont les IRIS de "
+                        "l'INSEE, découpage officiel d'environ 2 000 habitants, qui portent des noms connus "
+                        "(« Carmes-République », « Saint-Marceau »…). Les communes trop petites forment "
+                        "un seul quartier.\n\n"
+                        "Chaque vente est placée dans son quartier par sa position. Celles qui n'ont pas de "
+                        "coordonnées (dont toutes celles de 2026) le sont par leur section cadastrale, "
+                        "rattachée au quartier où tombent la plupart de ses autres ventes. "
+                        "Contours : IRIS 2024 (IGN / INSEE, Licence Ouverte 2.0).",
+                    ),
+                    _bloc(
                         "Ce que les données ne disent pas",
                         "tabler:alert-triangle",
                         "- **ni l'état, ni l'étage, ni le DPE** : deux biens au même prix au m² ne se valent "
                         "pas forcément\n"
-                        "- **pas d'adresse** : la section cadastrale (quelques rues) est le niveau le plus fin\n"
+                        "- **pas d'adresse** : le quartier est le niveau le plus fin\n"
                         "- le prix d'une maison **inclut le terrain**\n"
                         "- ce sont des prix **de vente**, pas des prix affichés en agence\n"
                         "- 1 011 ventes de 2021-2025 et toutes celles de 2026 n'ont pas de coordonnées : "

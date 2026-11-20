@@ -214,6 +214,24 @@ def resume_commune(f: FiltresDep, code: CodeCommune):
     return propre(data.resume_commune(f, commune_connue(code)))
 
 
+@app.get(
+    "/communes/{code}/quartiers",
+    tags=["commune"],
+    summary="Médianes par quartier nommé (IRIS de l'INSEE)",
+)
+def quartiers(f: FiltresDep, code: CodeCommune, type: TypeBien | None = None):
+    return records(data.stats_quartiers(f, commune_connue(code), type))
+
+
+@app.get(
+    "/communes/{code}/quartiers/geo",
+    tags=["commune"],
+    summary="Contours des quartiers d'une commune (GeoJSON)",
+)
+def quartiers_geo(code: CodeCommune):
+    return data.quartiers_geo(commune_connue(code))
+
+
 @app.get("/communes/{code}/sections", tags=["commune"], summary="Médianes par section cadastrale")
 def sections(f: FiltresDep, code: CodeCommune, type: TypeBien | None = None):
     return records(data.stats_sections(f, commune_connue(code), type))
@@ -230,6 +248,7 @@ def ventes_commune(
     code: CodeCommune,
     type: TypeBien | None = None,
     section: Annotated[str | None, Query(max_length=4)] = None,
+    quartier: Annotated[str | None, Query(max_length=12, description="code_iris")] = None,
     geo: Annotated[bool, Query(description="Ne garder que les ventes géolocalisées")] = False,
     limit: Annotated[int, Query(ge=1, le=20_000)] = 20_000,
 ):
@@ -239,6 +258,8 @@ def ventes_commune(
         df = df[df["type"] == type]
     if section:
         df = df[df["section"] == section]
+    if quartier:
+        df = df[df["code_iris"] == quartier]
     if geo:
         df = df.dropna(subset=["latitude", "longitude"])
     total = len(df)
@@ -248,6 +269,8 @@ def ventes_commune(
         "id_mutation",
         "date",
         "type",
+        "code_iris",
+        "nom_quartier",
         "section",
         "valeur_fonciere",
         "surface_reelle_bati",

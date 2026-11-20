@@ -155,78 +155,206 @@ def carte_communes(
     return fig
 
 
-def carte_ventes(
-    df: pd.DataFrame, scheme: str, section: str | None, center: dict, zoom: float
-) -> go.Figure:
-    """Nuage des ventes géolocalisées d'une commune, couleur = €/m²."""
+def vue_geo(features: list[dict]) -> tuple[dict, float]:
+    """Centre et zoom qui cadrent des contours GeoJSON."""
+    xs, ys = [], []
+    for f in features:
+        g = f["geometry"]
+        polys = g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+        for poly in polys:
+            for x, y in poly[0]:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return {"lat": 47.9, "lon": 1.9}, 11
+    span = max((max(ys) - min(ys)) * 1.45, max(xs) - min(xs), 0.004)
+    zoom = min(max(np.log2(360 / span) - 0.35, 9), 15.5)
+    return {"lat": (min(ys) + max(ys)) / 2, "lon": (min(xs) + max(xs)) / 2}, float(zoom)
+
+
+def _custom_ventes(d: pd.DataFrame):
+    return np.stack(
+        [
+            d["type"].astype(str),
+            d["valeur_fonciere"].map(fmt.euros),
+            d["surface_reelle_bati"].map(fmt.m2),
+            d["prix_m2"].map(fmt.eur_m2),
+            d["nom_quartier"],
+            d["date_mutation"].dt.strftime("%d/%m/%Y"),
+            d["code_iris"],
+        ],
+        axis=-1,
+    )
+
+
+HOVER_VENTE = (
+    "<b>%{customdata[0]}</b> · %{customdata[2]}<br>%{customdata[1]} "
+    "(%{customdata[3]})<br>%{customdata[4]} · %{customdata[5]}<extra></extra>"
+)
+
+
+def _colorbar(scheme: str, ticks) -> dict:
     c = COULEURS[scheme]
+    return dict(
+        title=dict(text="€/m²", font=dict(size=11, color=c["ink_2"])),
+        thickness=10,
+        len=0.6,
+        x=0.99,
+        xanchor="right",
+        bgcolor="rgba(0,0,0,0)",
+        outlinewidth=0,
+        tickfont=dict(size=11, color=c["ink_2"]),
+        tickvals=ticks,
+        ticktext=[fmt.entier(t) for t in ticks],
+    )
+
+
+def carte_ventes(df: pd.DataFrame, scheme: str, center: dict, zoom: float) -> go.Figure:
+    """Nuage des ventes géolocalisées, couleur = €/m² (communes sans quartiers)."""
     fig = _base(scheme)
     df = df.dropna(subset=["latitude", "longitude"])
-    if section:
-        autres, df_sel = df[df["section"] != section], df[df["section"] == section]
-    else:
-        autres, df_sel = df.iloc[0:0], df
-
-    def custom(d):
-        return np.stack(
-            [
-                d["type"].astype(str),
-                d["valeur_fonciere"].map(fmt.euros),
-                d["surface_reelle_bati"].map(fmt.m2),
-                d["prix_m2"].map(fmt.eur_m2),
-                d["section"],
-                d["date_mutation"].dt.strftime("%d/%m/%Y"),
-            ],
-            axis=-1,
-        )
-
-    hover = (
-        "<b>%{customdata[0]}</b> · %{customdata[2]}<br>%{customdata[1]} "
-        "(%{customdata[3]})<br>Section %{customdata[4]} · %{customdata[5]}<extra></extra>"
-    )
-    if not autres.empty:
+    if not df.empty:
+        lo, hi = df["prix_m2"].quantile([0.05, 0.95])
         fig.add_trace(
             go.Scattermap(
-                lat=autres["latitude"],
-                lon=autres["longitude"],
-                mode="markers",
-                marker=dict(size=7, color=c["indicatif"], opacity=0.6),
-                customdata=custom(autres),
-                hovertemplate=hover,
-            )
-        )
-    if not df_sel.empty:
-        lo, hi = df_sel["prix_m2"].quantile([0.05, 0.95])
-        ticks = np.linspace(lo, hi, 4)
-        fig.add_trace(
-            go.Scattermap(
-                lat=df_sel["latitude"],
-                lon=df_sel["longitude"],
+                lat=df["latitude"],
+                lon=df["longitude"],
                 mode="markers",
                 marker=dict(
                     size=9,
-                    color=df_sel["prix_m2"],
+                    color=df["prix_m2"],
                     cmin=lo,
                     cmax=hi,
                     colorscale=echelle_sequentielle(scheme),
                     opacity=0.9,
-                    colorbar=dict(
-                        title=dict(text="€/m²", font=dict(size=11, color=c["ink_2"])),
-                        thickness=10,
-                        len=0.6,
-                        x=0.99,
-                        xanchor="right",
-                        outlinewidth=0,
-                        tickfont=dict(size=11, color=c["ink_2"]),
-                        tickvals=ticks,
-                        ticktext=[fmt.entier(t) for t in ticks],
-                    ),
+                    colorbar=_colorbar(scheme, np.linspace(lo, hi, 4)),
                 ),
-                customdata=custom(df_sel),
-                hovertemplate=hover,
+                customdata=_custom_ventes(df),
+                hovertemplate=HOVER_VENTE,
             )
         )
     _map_layout(fig, scheme, "commune", center=center, zoom=zoom)
+    return fig
+
+
+def _hover_quartier(r) -> str:
+    lignes = [
+        f"<b>{r['nom_quartier']}</b>",
+        f"<b>{fmt.eur_m2(r['pm2_med'])}</b> · {fmt.ventes(r['n'])}",
+        f"Prix médian {fmt.euros(r['prix_med'])}",
+    ]
+    if not r["fiable"]:
+        lignes.append(f"<i>Moins de {cfg.SEUIL_FIABILITE} ventes : indicatif</i>")
+    lignes.append("<span style='font-size:11px'>Cliquer pour voir ses ventes</span>")
+    return "<br>".join(lignes)
+
+
+def carte_quartiers(
+    stats: pd.DataFrame,
+    geo: dict,
+    scheme: str,
+    selection: str | None,
+    ventes_selection: pd.DataFrame,
+) -> go.Figure:
+    """Quartiers d'une commune colorés par prix médian au m², cliquables.
+
+    Le quartier sélectionné est cerné, et ses ventes géolocalisées affichées.
+    """
+    c = COULEURS[scheme]
+    fig = _base(scheme)
+    features = geo["features"]
+    par_code = {f["properties"]["code_iris"]: f for f in features}
+    transparent = [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]]
+
+    def sous_geo(codes):
+        feats = [par_code[k] for k in codes if k in par_code]
+        return {"type": "FeatureCollection", "features": feats}
+
+    stats = stats[stats["code_iris"].isin(par_code)]
+    textes = [_hover_quartier(r) for _, r in stats.iterrows()]
+    stats = stats.assign(_hover=textes)
+    fiables, indicatifs = stats[stats["fiable"]], stats[~stats["fiable"]]
+    line = dict(color=c["surface"], width=1.2)
+    opacite = 0.45 if selection else 0.8
+
+    vides = [k for k in par_code if k not in set(stats["code_iris"])]
+    if vides:
+        fig.add_trace(
+            go.Choroplethmap(
+                geojson=sous_geo(vides),
+                featureidkey="properties.code_iris",
+                locations=vides,
+                z=np.zeros(len(vides)),
+                colorscale=transparent,
+                showscale=False,
+                marker=dict(line=dict(color=c["axis"], width=1)),
+                text=[
+                    f"<b>{par_code[k]['properties']['nom_quartier']}</b><br>Aucune vente"
+                    for k in vides
+                ],
+                hovertemplate="%{text}<extra></extra>",
+            )
+        )
+    if not indicatifs.empty:
+        fig.add_trace(
+            go.Choroplethmap(
+                geojson=sous_geo(indicatifs["code_iris"]),
+                featureidkey="properties.code_iris",
+                locations=indicatifs["code_iris"],
+                z=np.zeros(len(indicatifs)),
+                colorscale=[[0, c["indicatif"]], [1, c["indicatif"]]],
+                showscale=False,
+                marker=dict(line=line, opacity=opacite),
+                text=indicatifs["_hover"],
+                hovertemplate="%{text}<extra></extra>",
+            )
+        )
+    if not fiables.empty:
+        lo, hi = fiables["pm2_med"].min(), fiables["pm2_med"].max()
+        if hi - lo < 1:
+            lo, hi = lo - 100, hi + 100
+        fig.add_trace(
+            go.Choroplethmap(
+                geojson=sous_geo(fiables["code_iris"]),
+                featureidkey="properties.code_iris",
+                locations=fiables["code_iris"],
+                z=fiables["pm2_med"],
+                zmin=lo,
+                zmax=hi,
+                colorscale=echelle_sequentielle(scheme),
+                marker=dict(line=line, opacity=opacite),
+                text=fiables["_hover"],
+                hovertemplate="%{text}<extra></extra>",
+                colorbar=_colorbar(scheme, np.linspace(lo, hi, 4)),
+            )
+        )
+    if selection in par_code:
+        fig.add_trace(
+            go.Choroplethmap(
+                geojson=sous_geo([selection]),
+                featureidkey="properties.code_iris",
+                locations=[selection],
+                z=[0],
+                colorscale=transparent,
+                showscale=False,
+                marker=dict(line=dict(color=c["ink"], width=3)),
+                hoverinfo="skip",
+            )
+        )
+        v = ventes_selection.dropna(subset=["latitude", "longitude"])
+        if not v.empty:
+            fig.add_trace(
+                go.Scattermap(
+                    lat=v["latitude"],
+                    lon=v["longitude"],
+                    mode="markers",
+                    marker=dict(size=8, color=c["ink"], opacity=0.75),
+                    customdata=_custom_ventes(v),
+                    hovertemplate=HOVER_VENTE,
+                )
+            )
+    center, zoom = vue_geo([par_code[selection]] if selection in par_code else features)
+    _map_layout(fig, scheme, f"quartiers-{selection}", center=center, zoom=zoom)
     return fig
 
 
@@ -371,9 +499,10 @@ def maison_vs_appart(df: pd.DataFrame, scheme: str, n_max: int = 15) -> go.Figur
     return fig
 
 
-def barres_sections(
+def barres_quartiers(
     df: pd.DataFrame, scheme: str, selection: str | None, type_: str | None
 ) -> go.Figure:
+    """Prix médian au m² par quartier nommé, du plus cher (haut) au moins cher."""
     c = COULEURS[scheme]
     if df.empty:
         return figure_vide(scheme, "Aucune vente avec ces filtres")
@@ -381,7 +510,7 @@ def barres_sections(
     couleurs = [
         (
             (base if r.fiable else c["indicatif"])
-            if (selection is None or r.section == selection)
+            if (selection is None or r.code_iris == selection)
             else c["grid"]
         )
         for r in df.itertuples()
@@ -389,7 +518,7 @@ def barres_sections(
     fig = _base(scheme, hovermode="closest", bargap=0.2)
     fig.add_trace(
         go.Bar(
-            y=df["section"],
+            y=df["nom_quartier"],
             x=df["pm2_med"],
             orientation="h",
             marker=dict(color=couleurs, cornerradius=4, line=dict(width=0)),
@@ -403,6 +532,7 @@ def barres_sections(
                         "",
                         f"<br><i>Moins de {cfg.SEUIL_FIABILITE} ventes : indicatif</i>",
                     ),
+                    df["code_iris"],
                 ],
                 axis=-1,
             ),
@@ -411,14 +541,19 @@ def barres_sections(
             textfont=dict(size=11, color=c["muted"]),
             cliponaxis=False,
             hovertemplate=(
-                "<b>Section %{y}</b><br>%{customdata[0]} · %{customdata[1]}"
+                "<b>%{y}</b><br>%{customdata[0]} · %{customdata[1]}"
                 "<br>Prix médian %{customdata[2]}%{customdata[3]}"
-                "<br><span style='font-size:11px'>Cliquer pour filtrer les ventes</span><extra></extra>"
+                "<br><span style='font-size:11px'>Cliquer pour voir ses ventes</span>"
+                "<extra></extra>"
             ),
         )
     )
     fig.update_yaxes(
-        type="category", categoryorder="array", categoryarray=df["section"].tolist(), showgrid=False
+        type="category",
+        categoryorder="array",
+        categoryarray=df["nom_quartier"].tolist(),
+        showgrid=False,
+        tickfont=dict(size=12),
     )
     fig.update_xaxes(ticksuffix=" €", side="top")
     fig.update_layout(margin=dict(l=8, r=36, t=24, b=8), showlegend=False)

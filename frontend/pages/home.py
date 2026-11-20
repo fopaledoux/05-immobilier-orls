@@ -101,7 +101,7 @@ def layout(**_):
                         children=chart_card(
                             "Prix médian au m² par commune",
                             "home-map",
-                            subtitle="Cliquez sur une commune pour ouvrir sa fiche (sections, ventes).",
+                            subtitle="Cliquez sur une commune pour ouvrir sa fiche (quartiers, ventes).",
                             controls=type_control("home-map-type"),
                             height=460,
                             footer=legende_fiabilite(),

@@ -155,8 +155,13 @@ def resume_commune(f: Filtres, code: str) -> dict:
     return get(f"/communes/{code}/resume", f)
 
 
-def stats_sections(f: Filtres, code: str, type_: str | None) -> pd.DataFrame:
-    return _df(get(f"/communes/{code}/sections", f, type=type_), ["section", *AGG])
+def stats_quartiers(f: Filtres, code: str, type_: str | None) -> pd.DataFrame:
+    rows = get(f"/communes/{code}/quartiers", f, type=type_)
+    return _df(rows, ["code_iris", "nom_quartier", *AGG])
+
+
+def quartiers_geo(code: str) -> dict:
+    return get(f"/communes/{code}/quartiers/geo")
 
 
 def annuel_commune(f: Filtres, code: str) -> pd.DataFrame:
@@ -167,6 +172,8 @@ COLONNES_VENTES = [
     "id_mutation",
     "date",
     "type",
+    "code_iris",
+    "nom_quartier",
     "section",
     "valeur_fonciere",
     "surface_reelle_bati",
@@ -183,6 +190,7 @@ def ventes_commune(
     code: str,
     type_: str | None = None,
     section: str | None = None,
+    quartier: str | None = None,
     geo: bool = False,
     limit: int | None = None,
 ) -> tuple[int, pd.DataFrame]:
@@ -192,6 +200,7 @@ def ventes_commune(
         f,
         type=type_,
         section=section,
+        quartier=quartier,
         geo=geo or None,
         limit=limit,
     )

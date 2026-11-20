@@ -115,3 +115,19 @@ def test_erreurs():
     assert (
         client.get("/stats/kpis", params={"annee_min": 2025, "annee_max": 2021}).status_code == 422
     )
+
+
+def test_quartiers_nommes():
+    q = get(f"/communes/{ORLEANS}/quartiers", zone="loiret")
+    noms = {r["nom_quartier"] for r in q}
+    assert {"Carmes-République", "Faubourg Bourgogne"} <= noms
+    assert sum(r["n"] for r in q) == get(f"/communes/{ORLEANS}/resume", zone="loiret")["n"]
+    geo = get(f"/communes/{ORLEANS}/quartiers/geo")
+    assert len(geo["features"]) == 45
+    assert get(f"/communes/{ORLEANS}/resume")["n_quartiers"] == 45
+    # Petite commune : un seul « quartier », la commune elle-même
+    assert get("/communes/45006/resume", zone="loiret")["n_quartiers"] == 1
+    # Filtre des ventes par quartier, nom présent sur chaque vente
+    code = next(r["code_iris"] for r in q if r["nom_quartier"] == "Carmes-République")
+    v = get(f"/communes/{ORLEANS}/ventes", zone="loiret", quartier=code, limit=5)
+    assert v["total"] > 0 and {x["nom_quartier"] for x in v["ventes"]} == {"Carmes-République"}

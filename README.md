@@ -50,14 +50,14 @@ Principaux endpoints (tous en `GET`, filtres en paramètres : `zone`, `annee_min
 | `/stats/kpis`, `/stats/communes`, `/stats/communes/comparees` | Chiffres clés et médianes par commune |
 | `/stats/annuelles`, `/stats/trimestrielles`, `/stats/evolution[/communes]` | Tendances, avant et après 2022 |
 | `/budget/communes` | Communes accessibles pour un budget et un bien |
-| `/communes/{code}/resume`, `/sections`, `/annuel`, `/ventes`, `/comparables` | Fiche commune et drill-down |
+| `/communes/{code}/resume`, `/quartiers`, `/quartiers/geo`, `/annuel`, `/ventes`, `/comparables` | Fiche commune et drill-down par quartier |
 
 ## Les pages
 
 - **Vue d'ensemble** : chiffres clés, réponses aux trois questions, carte cliquable et tendance sur 12 mois glissants.
 - **Mon budget** : budget (frais de notaire inclus ou non), type, surface et nombre de pièces. Pour chaque commune, la part des ventes comparables qui tenaient dans le budget.
 - **Communes** : carte, comparaison maison et appartement, tableau de toutes les communes.
-- **Fiche commune** (drill-down **commune → section cadastrale → vente**) : prix par section, carte des ventes, tableau des ventes. Une vente sélectionnée est comparée aux ventes similaires (même type, surface à ±20 %).
+- **Fiche commune** (drill-down **commune → quartier → vente**) : prix médian par quartier nommé (« Carmes-République », « Saint-Marceau »…), carte des quartiers colorés par prix, où un clic affiche les ventes du quartier, et tableau des ventes. Une vente sélectionnée est comparée aux ventes similaires (même type, surface à ±20 %).
 - **Tendances** : prix et volumes avant et après 2022, carte des variations, plus fortes baisses et hausses.
 - **Méthodologie** : sources, filtres, choix de calcul et limites des données.
 
@@ -66,10 +66,10 @@ Sur toutes les pages, on peut basculer entre **Orléans Métropole** (vue par d�
 ## Choix de méthode
 
 - **Médianes, pas moyennes** : quelques ventes très chères ne déforment pas les prix.
-- **Seuil de fiabilité à 30 ventes** : en dessous, une commune ou une section reste en gris et son prix est dit « indicatif ». Le nombre de ventes est toujours affiché.
+- **Seuil de fiabilité à 30 ventes** : en dessous, une commune ou un quartier reste en gris et son prix est dit « indicatif ». Le nombre de ventes est toujours affiché.
 - **Frais de notaire** : environ 7,5 % dans l'ancien, déductibles du budget avec une case à cocher.
 - **Avant et après la hausse des taux** : deux périodes de deux ans (2021-22 et 2024-25) pour avoir assez de ventes par commune.
-- **Limites** : DVF ne dit rien de l'état du bien, de l'étage ni du DPE. Les adresses sont retirées (la section cadastrale est le niveau le plus fin) et le prix d'une maison inclut son terrain.
+- **Limites** : DVF ne dit rien de l'état du bien, de l'étage ni du DPE. Les adresses sont retirées (le quartier est le niveau le plus fin) et le prix d'une maison inclut son terrain.
 
 ## Lancer en local
 
@@ -99,6 +99,19 @@ uv run pytest
 ```
 
 Les contours des communes (`backend/data/communes_loiret.geojson`) sont dans le dépôt. Pour les régénérer : `uv run python scripts/prepare_geo.py` depuis `backend/`.
+
+### Quartiers
+
+Les sections cadastrales (« AB », « DX »…) ne parlaient pas aux acheteurs. La fiche commune raisonne donc par **quartiers IRIS** de l'INSEE : un découpage officiel d'environ 2 000 habitants, avec des noms connus des habitants. Orléans en compte 45 ; les petites communes forment un seul quartier, et la fiche passe alors directement aux ventes.
+
+Chaque vente est placée dans son quartier par sa position (point dans le polygone). Les ventes sans coordonnées, dont toutes celles de 2026, le sont par leur section cadastrale, rattachée au quartier où tombent la plupart de ses ventes géolocalisées. Résultat : 49 859 ventes rattachées sur 49 863.
+
+```bash
+cd backend
+uv run python scripts/prepare_quartiers.py chemin/vers/iris_loiret.geojson
+```
+
+La section cadastrale reste visible en dernière colonne du tableau des ventes, pour les utilisateurs avertis.
 
 ### Données 2026
 
@@ -138,6 +151,7 @@ backend/
   scripts/
     prepare_geo.py         # contours des communes
     prepare_dvf_2026s1.py  # ventes du 1er semestre 2026 (DVF brutes)
+    prepare_quartiers.py   # quartiers IRIS et rattachement des ventes
   tests/test_api.py
 frontend/
   app.py               # point d'entrée Dash (en-tête, filtres, thème) ; expose `server`
@@ -163,6 +177,7 @@ render.yaml            # déploiement des deux services
 
 - Ventes : **DGFiP, DVF**, Licence Ouverte 2.0. Pour 2021-2025, la version géolocalisée d'Etalab ; pour le 1er semestre 2026, la version brute de la DGFiP.
 - Contours des communes : IGN Admin Express via [geo.api.gouv.fr](https://geo.api.gouv.fr), Licence Ouverte 2.0
+- Quartiers : contours IRIS 2024 (IGN / INSEE) via [OpenDataSoft](https://public.opendatasoft.com/explore/dataset/georef-france-iris/), Licence Ouverte 2.0
 - Fonds de carte : © OpenStreetMap contributors, © CARTO
 
 Le cahier des charges d'origine est dans [`05-immobilier.md`](05-immobilier.md).

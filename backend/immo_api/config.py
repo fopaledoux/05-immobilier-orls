@@ -10,6 +10,10 @@ SALES_FILES = (
     DATA_DIR / "immobilier_2026s1.parquet",
 )
 GEOJSON_FILE = DATA_DIR / "communes_loiret.geojson"
+# Quartiers nommés (IRIS INSEE) et rattachement des ventes : scripts/prepare_quartiers.py
+QUARTIERS_FILE = DATA_DIR / "quartiers_loiret.geojson"
+VENTES_QUARTIERS_FILE = DATA_DIR / "ventes_quartiers.parquet"
+QUARTIER_INCONNU = ("inconnu", "Non localisé")
 
 # Code SIREN de l'EPCI Orléans Métropole (22 communes)
 METROPOLE_EPCI = "244500468"

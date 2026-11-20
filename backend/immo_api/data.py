@@ -17,6 +17,9 @@ import pandas as pd
 from immo_api.config import (
     BORNES,
     GEOJSON_FILE,
+    QUARTIER_INCONNU,
+    QUARTIERS_FILE,
+    VENTES_QUARTIERS_FILE,
     METROPOLE_EPCI,
     PERIODE_APRES,
     PERIODE_AVANT,
@@ -64,7 +67,34 @@ class Filtres:
 def load_sales() -> pd.DataFrame:
     df = pd.concat([pd.read_parquet(f, columns=COLONNES) for f in SALES_FILES], ignore_index=True)
     df["type"] = df["type"].astype("category")
+    # Quartier nommé (IRIS) de chaque vente
+    quartiers = pd.read_parquet(VENTES_QUARTIERS_FILE)
+    df = df.merge(quartiers, on="id_mutation", how="left", validate="one_to_one")
+    noms = {
+        f["properties"]["code_iris"]: f["properties"]["nom_quartier"]
+        for f in load_quartiers()["features"]
+    }
+    df["nom_quartier"] = df["code_iris"].map(noms).fillna(QUARTIER_INCONNU[1])
+    df["code_iris"] = df["code_iris"].fillna(QUARTIER_INCONNU[0])
     return df
+
+
+@lru_cache(maxsize=1)
+def load_quartiers() -> dict:
+    return json.loads(QUARTIERS_FILE.read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=512)
+def quartiers_geo(code_commune: str) -> dict:
+    """Contours des quartiers (IRIS) d'une commune."""
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            f
+            for f in load_quartiers()["features"]
+            if f["properties"]["code_commune"] == code_commune
+        ],
+    }
 
 
 @lru_cache(maxsize=1)
@@ -300,6 +330,17 @@ def stats_sections(f: Filtres, code_commune: str, type_: str | None) -> pd.DataF
 
 
 @lru_cache(maxsize=256)
+def stats_quartiers(f: Filtres, code_commune: str, type_: str | None) -> pd.DataFrame:
+    """Médianes par quartier nommé (IRIS) d'une commune."""
+    df = ventes(f)
+    df = df[df["code_commune"] == code_commune]
+    if type_:
+        df = df[df["type"] == type_]
+    out = _agg(df.groupby(["code_iris", "nom_quartier"], observed=True)).reset_index()
+    return out.sort_values("pm2_med")
+
+
+@lru_cache(maxsize=256)
 def ventes_commune(f: Filtres, code_commune: str) -> pd.DataFrame:
     df = ventes(f)
     return df[df["code_commune"] == code_commune]
@@ -342,6 +383,7 @@ def resume_commune(f: Filtres, code_commune: str) -> dict:
         "code_commune": code_commune,
         "n": len(df),
         "n_sections": int(df["section"].nunique()),
+        "n_quartiers": len(quartiers_geo(code_commune)["features"]),
         **_par_type(df),
     }
 

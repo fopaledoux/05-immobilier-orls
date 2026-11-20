@@ -1,6 +1,5 @@
-"""Fiche commune : drill-down commune → section cadastrale → vente."""
+"""Fiche commune : drill-down commune → quartier (IRIS) → vente."""
 
-import math
 from dataclasses import replace
 
 import dash
@@ -9,10 +8,17 @@ import pandas as pd
 from dash import Input, Output, State, callback, dcc, html, no_update
 
 from immo import api, fmt
-from immo.components import chart_card, empty_state, grid, icon, stat_tile
 from immo import config as cfg
 from immo.api import Filtres
-from immo.figures import barres_sections, carte_ventes, figure_vide, tendance_annuelle_commune
+from immo.components import chart_card, empty_state, grid, icon, stat_tile
+from immo.figures import (
+    barres_quartiers,
+    carte_quartiers,
+    carte_ventes,
+    figure_vide,
+    tendance_annuelle_commune,
+    vue_geo,
+)
 
 dash.register_page(
     __name__,
@@ -42,7 +48,7 @@ COLONNES_VENTES = [
         "sort": "desc",
     },
     {"field": "type", "headerName": "Type"},
-    {"field": "section", "headerName": "Section", "maxWidth": 110},
+    {"field": "quartier", "headerName": "Quartier", "minWidth": 170},
     {"field": "prix", "headerName": "Prix", "valueFormatter": {"function": "euros(params.value)"}},
     {
         "field": "surface",
@@ -59,6 +65,12 @@ COLONNES_VENTES = [
         "field": "terrain",
         "headerName": "Terrain",
         "valueFormatter": {"function": "m2(params.value)"},
+    },
+    {
+        "field": "section",
+        "headerName": "Section cad.",
+        "maxWidth": 120,
+        "headerTooltip": "Section cadastrale : découpage fiscal, pour les utilisateurs avertis",
     },
 ]
 
@@ -78,7 +90,8 @@ def layout(code=None, **_):
     return html.Div(
         [
             dcc.Store(id="commune-code", data=code),
-            dcc.Store(id="commune-section", data=None),
+            dcc.Store(id="commune-quartier", data=None),
+            dcc.Store(id="commune-nom", data=nom),
             html.Div(
                 className="page-header",
                 children=[
@@ -88,7 +101,6 @@ def layout(code=None, **_):
                         className="breadcrumbs",
                         children=_crumbs(nom, None),
                     ),
-                    dcc.Store(id="commune-nom", data=nom),
                     dmc.Title(nom, order=1, className="page-title"),
                     dmc.Text(id="commune-subtitle", className="page-subtitle"),
                 ],
@@ -138,8 +150,8 @@ def layout(code=None, **_):
                         ],
                     ),
                     dmc.Button(
-                        id="commune-section-clear",
-                        children="Toutes les sections",
+                        id="commune-quartier-clear",
+                        children="Tous les quartiers",
                         leftSection=icon("tabler:x", 14),
                         variant="light",
                         size="xs",
@@ -158,20 +170,18 @@ def layout(code=None, **_):
                             withBorder=True,
                             className="chart-card",
                             children=[
+                                dmc.Text("Prix médian au m² par quartier", className="chart-title"),
                                 dmc.Text(
-                                    "Prix médian au m² par section cadastrale",
-                                    className="chart-title",
-                                ),
-                                dmc.Text(
-                                    "Une section = un quartier de quelques rues. Le chiffre indique le nombre "
-                                    f"de ventes ; en gris, moins de {cfg.SEUIL_FIABILITE}. Cliquez pour filtrer.",
+                                    "Quartiers officiels de l'INSEE. Le chiffre indique le nombre de "
+                                    f"ventes ; en gris, moins de {cfg.SEUIL_FIABILITE}. "
+                                    "Cliquez sur un quartier pour voir ses ventes.",
                                     className="chart-subtitle",
                                 ),
                                 html.Div(
                                     className="scroll-chart",
                                     children=dcc.Loading(
                                         dcc.Graph(
-                                            id="commune-sections",
+                                            id="commune-quartiers",
                                             config={"displayModeBar": False, "responsive": True},
                                         ),
                                         type="circle",
@@ -184,10 +194,10 @@ def layout(code=None, **_):
                     dmc.GridCol(
                         span={"base": 12, "lg": 7},
                         children=chart_card(
-                            "Les ventes sur la carte",
-                            "commune-points",
-                            subtitle="Couleur = prix au m². Cliquez sur un point pour sélectionner sa section. "
-                            "Les ventes de 2026, sans coordonnées, n'y figurent pas.",
+                            "Les quartiers sur la carte",
+                            "commune-carte",
+                            subtitle="Couleur = prix médian au m². Cliquez sur un quartier pour "
+                            "afficher ses ventes (celles de 2026, sans coordonnées, n'y figurent pas).",
                             height=480,
                         ),
                     ),
@@ -218,7 +228,8 @@ def layout(code=None, **_):
                                             "mode": "singleRow",
                                             "checkboxes": False,
                                             "enableClickSelection": True,
-                                        }
+                                        },
+                                        "tooltipShowDelay": 300,
                                     },
                                 ),
                             ],
@@ -243,17 +254,18 @@ def layout(code=None, **_):
             chart_card(
                 "Évolution du prix médian au m²",
                 "commune-trend",
-                subtitle=f"Point creux : moins de {cfg.SEUIL_FIABILITE} ventes cette année-là (valeur indicative).",
+                subtitle=f"Point creux : moins de {cfg.SEUIL_FIABILITE} ventes cette année-là "
+                "(valeur indicative).",
                 height=300,
             ),
         ]
     )
 
 
-def _crumbs(nom, section):
+def _crumbs(nom, quartier_nom):
     items = [dcc.Link("Communes", href="/communes"), html.Span(nom)]
-    if section:
-        items.append(html.Span(f"Section {section}"))
+    if quartier_nom:
+        items.append(html.Span(quartier_nom))
     return items
 
 
@@ -266,15 +278,11 @@ def _type(t):
     return None if t == "Tous" else t
 
 
-def _vue_carte(df):
-    d = df.dropna(subset=["latitude", "longitude"])
-    if d.empty:
-        return {"lat": 47.9, "lon": 1.9}, 11
-    lat0, lat1 = d["latitude"].quantile([0.02, 0.98])
-    lon0, lon1 = d["longitude"].quantile([0.02, 0.98])
-    span = max((lat1 - lat0) * 1.45, lon1 - lon0, 0.004)
-    zoom = min(max(math.log2(360 / span) - 0.4, 10), 15.5)
-    return {"lat": float((lat0 + lat1) / 2), "lon": float((lon0 + lon1) / 2)}, zoom
+def _nom_quartier(code_commune, code_iris):
+    for f in api.quartiers_geo(code_commune)["features"]:
+        if f["properties"]["code_iris"] == code_iris:
+            return f["properties"]["nom_quartier"]
+    return None
 
 
 @callback(
@@ -315,86 +323,106 @@ def maj_kpis(store, code):
             f"{'plus cher' if e > 0 else 'moins cher'} que la médiane de la zone "
             f"{cfg.ZONES[f.zone]['label']} ({fmt.eur_m2(zone['Maison']['pm2_med'])})"
         )
-    n_sections = r["n_sections"]
-    sous_titre = (
-        f"{fmt.ventes(r['n'])} de {f.annee_min} à {f.annee_max}, réparties sur {n_sections} "
-        f"section{'s' if n_sections > 1 else ''} cadastrale{'s' if n_sections > 1 else ''}."
-    )
+    nq = r["n_quartiers"]
+    decoupage = f"réparties dans {nq} quartiers" if nq > 1 else "commune non découpée en quartiers"
+    sous_titre = f"{fmt.ventes(r['n'])} de {f.annee_min} à {f.annee_max}, {decoupage}."
     return sous_titre, m_val, m_det, a_val, a_det, prix, prix_det, ecart, ecart_det
 
 
 @callback(
-    Output("commune-sections", "figure"),
-    Output("commune-sections", "style"),
+    Output("commune-quartiers", "figure"),
+    Output("commune-quartiers", "style"),
     Input("filters-store", "data"),
     Input("commune-code", "data"),
     Input("commune-type", "value"),
-    Input("commune-section", "data"),
+    Input("commune-quartier", "data"),
     Input("color-scheme-store", "data"),
+    State("commune-nom", "data"),
 )
-def maj_sections(store, code, type_, section, scheme):
-    f = _filtres_commune(store)
-    df = api.stats_sections(f, code, _type(type_))
-    fig = barres_sections(df, scheme, section, _type(type_))
-    hauteur = max(260, 26 * len(df) + 60)
+def maj_quartiers(store, code, type_, quartier, scheme, nom):
+    if len(api.quartiers_geo(code)["features"]) <= 1:
+        fig = figure_vide(
+            scheme,
+            f"{nom} est trop petite pour être découpée en quartiers :<br>"
+            "toutes ses ventes sont sur la carte et dans le tableau.",
+        )
+        fig.update_layout(height=200)
+        return fig, {"height": "200px"}
+    df = api.stats_quartiers(_filtres_commune(store), code, _type(type_))
+    fig = barres_quartiers(df, scheme, quartier, _type(type_))
+    hauteur = max(260, 28 * len(df) + 60)
     fig.update_layout(height=hauteur)
     return fig, {"height": f"{hauteur}px"}
 
 
 @callback(
-    Output("commune-points", "figure"),
+    Output("commune-carte", "figure"),
     Input("filters-store", "data"),
     Input("commune-code", "data"),
     Input("commune-type", "value"),
-    Input("commune-section", "data"),
+    Input("commune-quartier", "data"),
     Input("color-scheme-store", "data"),
 )
-def maj_points(store, code, type_, section, scheme):
+def maj_carte(store, code, type_, quartier, scheme):
     f = _filtres_commune(store)
-    _, df = api.ventes_commune(f, code, geo=True)
-    center, zoom = _vue_carte(df[df["section"] == section] if section else df)
-    if _type(type_):
-        df = df[df["type"] == type_]
-    if df.empty:
-        message = "Aucune vente géolocalisée avec ces filtres"
-        if f.annee_max >= cfg.ANNEE_PARTIELLE["annee"]:
-            message += "<br>(les ventes de 2026 n'ont pas de coordonnées)"
-        return figure_vide(scheme, message)
-    return carte_ventes(df, scheme, section, center, zoom)
+    geo = api.quartiers_geo(code)
+    if len(geo["features"]) <= 1:
+        # Commune sans quartiers : le nuage des ventes, cadré sur la commune
+        _, df = api.ventes_commune(f, code, type_=_type(type_), geo=True)
+        if df.empty:
+            message = "Aucune vente géolocalisée avec ces filtres"
+            if f.annee_max >= cfg.ANNEE_PARTIELLE["annee"]:
+                message += "<br>(les ventes de 2026 n'ont pas de coordonnées)"
+            return figure_vide(scheme, message)
+        center, zoom = vue_geo(geo["features"])
+        return carte_ventes(df, scheme, center, zoom)
+    stats = api.stats_quartiers(f, code, _type(type_))
+    ventes_q = pd.DataFrame(columns=api.COLONNES_VENTES + ["date_mutation"])
+    if quartier:
+        _, ventes_q = api.ventes_commune(f, code, type_=_type(type_), quartier=quartier, geo=True)
+    return carte_quartiers(stats, geo, scheme, quartier, ventes_q)
 
 
 @callback(
-    Output("commune-section", "data"),
-    Input("commune-sections", "clickData"),
-    Input("commune-points", "clickData"),
-    Input("commune-section-clear", "n_clicks"),
-    State("commune-section", "data"),
+    Output("commune-quartier", "data"),
+    Input("commune-quartiers", "clickData"),
+    Input("commune-carte", "clickData"),
+    Input("commune-quartier-clear", "n_clicks"),
+    State("commune-quartier", "data"),
     prevent_initial_call=True,
 )
-def choisir_section(bar_click, point_click, _clear, actuelle):
+def choisir_quartier(bar_click, carte_click, _clear, actuel):
     trig = dash.ctx.triggered_id
-    if trig == "commune-section-clear":
+    if trig == "commune-quartier-clear":
         return None
-    if trig == "commune-sections" and bar_click:
-        s = bar_click["points"][0].get("y")
-        return None if s == actuelle else s
-    if trig == "commune-points" and point_click:
-        cd = point_click["points"][0].get("customdata")
-        return cd[4] if cd else no_update
-    return no_update
+    if trig == "commune-quartiers" and bar_click:
+        cd = bar_click["points"][0].get("customdata")
+        choix = cd[4] if cd else None
+    elif trig == "commune-carte" and carte_click:
+        point = carte_click["points"][0]
+        cd = point.get("customdata")
+        # clic sur un quartier (location) ou sur une vente (customdata[6])
+        choix = point.get("location") or (cd[6] if cd and len(cd) > 6 else None)
+    else:
+        return no_update
+    if not choix:
+        return no_update
+    return None if choix == actuel else choix
 
 
 @callback(
-    Output("commune-section-clear", "style"),
-    Output("commune-section-clear", "children"),
+    Output("commune-quartier-clear", "style"),
+    Output("commune-quartier-clear", "children"),
     Output("commune-crumbs", "children"),
-    Input("commune-section", "data"),
+    Input("commune-quartier", "data"),
+    State("commune-code", "data"),
     State("commune-nom", "data"),
 )
-def maj_section_ui(section, nom):
-    if not section:
+def maj_quartier_ui(quartier, code, nom):
+    if not quartier:
         return {"display": "none"}, "", _crumbs(nom, None)
-    return {}, f"Section {section} · voir toutes les sections", _crumbs(nom, section)
+    nom_q = _nom_quartier(code, quartier) or "Quartier"
+    return {}, f"{nom_q} · voir tous les quartiers", _crumbs(nom, nom_q)
 
 
 @callback(
@@ -403,12 +431,12 @@ def maj_section_ui(section, nom):
     Input("filters-store", "data"),
     Input("commune-code", "data"),
     Input("commune-type", "value"),
-    Input("commune-section", "data"),
+    Input("commune-quartier", "data"),
 )
-def maj_ventes(store, code, type_, section):
+def maj_ventes(store, code, type_, quartier):
     f = _filtres_commune(store)
     n_total, df = api.ventes_commune(
-        f, code, type_=_type(type_), section=section, limit=None if section else MAX_LIGNES
+        f, code, type_=_type(type_), quartier=quartier, limit=None if quartier else MAX_LIGNES
     )
     tronque = n_total > len(df)
     rows = [
@@ -416,6 +444,7 @@ def maj_ventes(store, code, type_, section):
             "id": r.id_mutation,
             "date": r.date,
             "type": r.type,
+            "quartier": r.nom_quartier,
             "section": r.section,
             "prix": r.valeur_fonciere,
             "surface": r.surface_reelle_bati,
@@ -429,10 +458,12 @@ def maj_ventes(store, code, type_, section):
         }
         for r in df.itertuples()
     ]
-    titre = f"{fmt.ventes(n_total)}" + (f" dans la section {section}" if section else "")
+    titre = fmt.ventes(n_total)
+    if quartier:
+        titre += f" dans le quartier {_nom_quartier(code, quartier) or ''}"
     if tronque:
         titre += (
-            f" · les {fmt.entier(len(df))} plus récentes (choisissez une section pour tout voir)"
+            f" · les {fmt.entier(len(df))} plus récentes (choisissez un quartier pour tout voir)"
         )
     return rows, titre
 
@@ -451,7 +482,7 @@ def detail_vente(selected, store, code):
     f = _filtres_commune(store)
     comp = api.comparables_stats(f, code, v["type"], float(v["surface"]), v["id"])
     lignes = [
-        dmc.Text(f"{v['type']} · {fmt.m2(v['surface'])} · section {v['section']}", fw=600),
+        dmc.Text(f"{v['type']} · {fmt.m2(v['surface'])} · {v['quartier']}", fw=600),
         dmc.Text(
             f"Vendu {fmt.euros(v['prix'])} le {v['date'][8:10]}/{v['date'][5:7]}/{v['date'][:4]}",
             size="sm",
@@ -485,7 +516,8 @@ def detail_vente(selected, store, code):
         dmc.Text(
             [
                 html.Strong(fmt.pct(ecart, decimales=0)),
-                f" par rapport à la médiane de {fmt.ventes(comp['n'])} comparables ({fmt.eur_m2(med)}).",
+                f" par rapport à la médiane de {fmt.ventes(comp['n'])} comparables "
+                f"({fmt.eur_m2(med)}).",
             ],
             size="sm",
             mt="sm",
@@ -496,8 +528,9 @@ def detail_vente(selected, store, code):
             c="dimmed",
         ),
         dmc.Text(
-            f"Comparables : {v['type'].lower()}s de la commune, surface entre {fmt.m2(v['surface'] * 0.8)} et "
-            f"{fmt.m2(v['surface'] * 1.2)}, mêmes filtres. DVF ne dit rien de l'état ni du DPE.",
+            f"Comparables : {v['type'].lower()}s de la commune, surface entre "
+            f"{fmt.m2(v['surface'] * 0.8)} et {fmt.m2(v['surface'] * 1.2)}, mêmes filtres. "
+            "DVF ne dit rien de l'état ni du DPE.",
             size="xs",
             c="dimmed",
             mt="sm",
