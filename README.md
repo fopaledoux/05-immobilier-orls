@@ -81,6 +81,37 @@ L'appli intègre un assistant basé sur **Google Gemini** (offre gratuite), appe
 
 > Sur l'offre gratuite de Gemini, Google peut utiliser les échanges pour améliorer ses produits : ne saisissez pas d'informations personnelles dans le chat.
 
+## Serveur MCP
+
+Le projet expose ses données par un serveur [MCP](https://modelcontextprotocol.io) (`backend/immo_api/mcp_server.py`, SDK officiel `mcp` 2.x). N'importe quel assistant compatible (Claude Code, Claude Desktop…) peut ainsi interroger les prix du Loiret, avec les mêmes calculs que le tableau de bord.
+
+| Type | Contenu |
+|---|---|
+| **Outils** (lecture seule) | `chercher_commune`, `prix_commune`, `prix_par_quartier`, `communes_pour_budget`, `classement_communes`, `evolution_des_prix`, `evolution_commune`, `evaluer_un_prix`, `prix_autour_d_une_adresse` (géocodage IGN) |
+| **Ressources** | `immo://regles` (seuil, frais, périodes, sources), `immo://communes`, `immo://communes/{code_commune}` (fiche avec quartiers) |
+| **Prompt** | `evaluer_une_annonce` (commune, type, surface, prix) |
+
+Le fichier `.mcp.json`, à la racine, déclare le serveur. **Claude Code** le propose automatiquement quand on ouvre le dépôt.
+
+**Inspecter le serveur avec MCP Inspector** (Node.js requis), depuis la racine du dépôt :
+
+```bash
+npx @modelcontextprotocol/inspector --config .mcp.json --server immo-loiret
+```
+
+L'interface s'ouvre sur `http://127.0.0.1:6274`. Le jeton d'accès est affiché dans le terminal. Cliquez ensuite sur l'interrupteur du serveur `immo-loiret` pour vous connecter, puis explorez les outils, les ressources et le prompt.
+
+En ligne de commande, sans interface :
+
+```bash
+npx @modelcontextprotocol/inspector --cli --config .mcp.json --server immo-loiret --method tools/list
+npx @modelcontextprotocol/inspector --cli --config .mcp.json --server immo-loiret --method tools/call --tool-name evaluer_un_prix --tool-arg 'code_commune="45234"' --tool-arg type_bien=Appartement --tool-arg surface=60 --tool-arg prix=180000
+```
+
+Les codes INSEE se passent entre guillemets JSON (`'code_commune="45234"'`), sinon l'Inspector les convertit en nombres.
+
+Le serveur peut aussi tourner en HTTP : `uv run python -m immo_api.mcp_server --http --port 8020` (point d'accès `/mcp`).
+
 ## Choix de méthode
 
 - **Médianes, pas moyennes** : quelques ventes très chères ne déforment pas les prix.
@@ -176,12 +207,16 @@ backend/
     main.py            # routes FastAPI, validation des paramètres
     data.py            # chargement, filtres et agrégats mémoïsés
     config.py          # règles métier (seuil, frais, périodes, bornes)
+    geo.py             # distances, point dans un polygone, géocodage d'adresses
+    llm.py             # client Gemini (assistant), garde-fous et repli
+    outils.py          # outils de données partagés par l'assistant et le serveur MCP
+    mcp_server.py      # serveur MCP du projet
   data/                # ventes DVF 2021-2025 et 2026 S1 (parquet), contours des communes
   scripts/
     prepare_geo.py         # contours des communes
     prepare_dvf_2026s1.py  # ventes du 1er semestre 2026 (DVF brutes)
     prepare_quartiers.py   # quartiers IRIS et rattachement des ventes
-  tests/test_api.py
+  tests/               # API, assistant (Gemini simulé), serveur MCP
 frontend/
   app.py               # point d'entrée Dash (en-tête, filtres, thème) ; expose `server`
   theme.py             # couleurs, templates Plotly clair/sombre, thème Mantine

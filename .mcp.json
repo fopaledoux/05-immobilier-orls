@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "immo-loiret": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "backend", "python", "-m", "immo_api.mcp_server"]
+    }
+  }
+}

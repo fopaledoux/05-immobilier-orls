@@ -64,7 +64,11 @@ def outils(f: Filtres) -> list[Callable]:
         trouve = exact if len(exact) else idx[noms.str.contains(cible, regex=False)]
         return {
             "communes": [
-                {"code_commune": r.code_commune, "nom": r.nom_commune, "metropole": r.metropole}
+                {
+                    "code_commune": r.code_commune,
+                    "nom": r.nom_commune,
+                    "metropole": bool(r.metropole),
+                }
                 for r in trouve.head(5).itertuples()
             ]
         }
