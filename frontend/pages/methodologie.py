@@ -99,6 +99,17 @@ def layout(**_):
                         "La variation des volumes compare le nombre moyen de ventes **par an**.",
                     ),
                     _bloc(
+                        "Autour d'une adresse",
+                        "tabler:map-pin-search",
+                        "DVF ne publie pas l'adresse des biens vendus. Quand vous cherchez une adresse, "
+                        "elle est localisée par la **Base Adresse Nationale** (géocodeur de l'IGN), puis "
+                        "on retient les ventes situées dans le rayon choisi (300 m, 500 m ou 1 km) et on "
+                        "compare leurs prix médians à ceux de la commune.\n\n"
+                        "Seules les ventes géolocalisées comptent : celles de 2026 n'ont pas de "
+                        "coordonnées. L'adresse saisie n'est ni enregistrée ni placée dans l'adresse de "
+                        "la page.",
+                    ),
+                    _bloc(
                         "Quartiers",
                         "tabler:map-pin",
                         "Dans une commune, les prix sont détaillés par **quartier** : ce sont les IRIS de "

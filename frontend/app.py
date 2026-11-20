@@ -316,6 +316,8 @@ def serve_layout():
         children=[
             dcc.Store(id="color-scheme-store", storage_type="local", data="light"),
             dcc.Store(id="filters-store", storage_type="session", data=cfg.FILTRES_DEFAUT),
+            # Dernière adresse cherchée (en mémoire seulement, jamais dans l'URL)
+            dcc.Store(id="adresse-recherchee", storage_type="memory"),
             dmc.AppShell(
                 header={"height": 68},
                 padding=0,

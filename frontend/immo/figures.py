@@ -640,3 +640,71 @@ def tendance_annuelle_commune(df: pd.DataFrame, scheme: str) -> go.Figure:
     fig.update_xaxes(showgrid=False, type="category")
     fig.update_yaxes(ticksuffix=" €")
     return fig
+
+
+def _cercle(lat: float, lon: float, rayon_m: float, n: int = 72) -> tuple[list, list]:
+    """Contour d'un cercle de `rayon_m` mètres (approximation locale)."""
+    angles = np.linspace(0, 2 * np.pi, n)
+    dlat = rayon_m / 111_320
+    dlon = rayon_m / (111_320 * np.cos(np.radians(lat)))
+    return list(lat + dlat * np.sin(angles)), list(lon + dlon * np.cos(angles))
+
+
+def carte_autour(df: pd.DataFrame, scheme: str, point: dict, rayon: float, label: str) -> go.Figure:
+    """Ventes à moins de `rayon` mètres d'une adresse, couleur = €/m²."""
+    c = COULEURS[scheme]
+    fig = _base(scheme)
+    lats, lons = _cercle(point["lat"], point["lon"], rayon)
+    fig.add_trace(
+        go.Scattermap(
+            lat=lats,
+            lon=lons,
+            mode="lines",
+            fill="toself",
+            fillcolor="rgba(42,120,214,0.08)",
+            line=dict(color=c["maison"], width=2),
+            hoverinfo="skip",
+        )
+    )
+    v = df.dropna(subset=["latitude", "longitude"])
+    if not v.empty:
+        lo, hi = v["prix_m2"].quantile([0.05, 0.95])
+        if hi - lo < 1:
+            lo, hi = lo - 100, hi + 100
+        fig.add_trace(
+            go.Scattermap(
+                lat=v["latitude"],
+                lon=v["longitude"],
+                mode="markers",
+                marker=dict(
+                    size=10,
+                    color=v["prix_m2"],
+                    cmin=lo,
+                    cmax=hi,
+                    colorscale=echelle_sequentielle(scheme),
+                    opacity=0.9,
+                    colorbar=_colorbar(scheme, np.linspace(lo, hi, 4)),
+                ),
+                customdata=_custom_ventes(v),
+                hovertemplate=HOVER_VENTE,
+            )
+        )
+    fig.add_trace(
+        go.Scattermap(
+            lat=[point["lat"]],
+            lon=[point["lon"]],
+            mode="markers",
+            marker=dict(size=16, color=c["ink"]),
+            text=[label],
+            hovertemplate="<b>%{text}</b><br>Adresse recherchée<extra></extra>",
+        )
+    )
+    zoom = float(np.clip(15.0 - np.log2(rayon / 300), 12, 16))
+    _map_layout(
+        fig,
+        scheme,
+        f"autour-{label}-{rayon}",
+        center={"lat": point["lat"], "lon": point["lon"]},
+        zoom=zoom,
+    )
+    return fig

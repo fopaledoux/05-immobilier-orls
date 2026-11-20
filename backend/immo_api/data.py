@@ -14,6 +14,7 @@ from functools import lru_cache
 
 import pandas as pd
 
+from immo_api.geo import contient, distance_m
 from immo_api.config import (
     BORNES,
     GEOJSON_FILE,
@@ -411,4 +412,35 @@ def comparables_stats(
         "pm2_q3": q3,
         "surf_min": surface * 0.8,
         "surf_max": surface * 1.2,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Autour d'une adresse
+# --------------------------------------------------------------------------- #
+def quartier_de(code_commune: str, lat: float, lon: float) -> dict | None:
+    """Quartier (IRIS) qui contient le point, parmi ceux de la commune."""
+    for f in quartiers_geo(code_commune)["features"]:
+        if contient(f["geometry"], lon, lat):
+            return {k: f["properties"][k] for k in ("code_iris", "nom_quartier")}
+    return None
+
+
+def ventes_autour(
+    f: Filtres, code_commune: str, lat: float, lon: float, rayon: float
+) -> pd.DataFrame:
+    """Ventes géolocalisées de la commune à moins de `rayon` mètres du point."""
+    df = ventes_commune(f, code_commune).dropna(subset=["latitude", "longitude"])
+    d = distance_m(lat, lon, df["latitude"], df["longitude"])
+    return df.assign(distance_m=d.round())[d <= rayon]
+
+
+@lru_cache(maxsize=512)
+def autour_adresse(f: Filtres, code_commune: str, lat: float, lon: float, rayon: float) -> dict:
+    df = ventes_autour(f, code_commune, lat, lon, rayon)
+    return {
+        "rayon": rayon,
+        "n": len(df),
+        "quartier": quartier_de(code_commune, lat, lon),
+        **_par_type(df),
     }

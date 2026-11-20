@@ -131,3 +131,52 @@ def test_quartiers_nommes():
     code = next(r["code_iris"] for r in q if r["nom_quartier"] == "Carmes-République")
     v = get(f"/communes/{ORLEANS}/ventes", zone="loiret", quartier=code, limit=5)
     assert v["total"] > 0 and {x["nom_quartier"] for x in v["ventes"]} == {"Carmes-République"}
+
+
+# Rue de la République, Orléans (coordonnées de la Base Adresse Nationale)
+REPUBLIQUE = {"lat": 47.904773, "lon": 1.904538}
+
+
+def test_ventes_autour_d_une_adresse():
+    a = get(f"/communes/{ORLEANS}/autour", zone="loiret", rayon=500, **REPUBLIQUE)
+    assert a["n"] > 0 and a["rayon"] == 500
+    assert a["quartier"]["nom_quartier"]  # le point tombe dans un quartier nommé
+    proche = get(f"/communes/{ORLEANS}/autour", zone="loiret", rayon=200, **REPUBLIQUE)
+    assert proche["n"] < a["n"]
+    v = get(f"/communes/{ORLEANS}/ventes", zone="loiret", rayon=500, **REPUBLIQUE)
+    assert v["total"] == a["n"]
+    assert all(0 <= x["distance_m"] <= 500 for x in v["ventes"])
+
+
+def test_autour_parametres_invalides():
+    assert client.get(f"/communes/{ORLEANS}/autour").status_code == 422
+    assert client.get(f"/communes/{ORLEANS}/autour", params={"lat": 47.9}).status_code == 422
+    params = {**REPUBLIQUE, "rayon": 10_000}
+    assert client.get(f"/communes/{ORLEANS}/autour", params=params).status_code == 422
+
+
+def test_recherche_adresse(monkeypatch):
+    import immo_api.main as main
+
+    def faux_geocoder(q, commune, limite):
+        assert commune == ORLEANS
+        return (
+            {
+                "label": "Rue de la République 45000 Orléans",
+                **REPUBLIQUE,
+                "code_commune": ORLEANS,
+                "nom_commune": "Orléans",
+                "type": "street",
+            },
+        )
+
+    monkeypatch.setattr(main, "geocoder", faux_geocoder)
+    r = get("/adresses", q="rue de la rep", commune=ORLEANS)
+    assert r[0]["label"].startswith("Rue de la République")
+    assert client.get("/adresses", params={"q": "ru"}).status_code == 422
+
+    def panne(*_):
+        raise main.GeocodageIndisponible("délai dépassé")
+
+    monkeypatch.setattr(main, "geocoder", panne)
+    assert client.get("/adresses", params={"q": "rue bannier"}).status_code == 502

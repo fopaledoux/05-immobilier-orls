@@ -51,6 +51,7 @@ Principaux endpoints (tous en `GET`, filtres en paramètres : `zone`, `annee_min
 | `/stats/annuelles`, `/stats/trimestrielles`, `/stats/evolution[/communes]` | Tendances, avant et après 2022 |
 | `/budget/communes` | Communes accessibles pour un budget et un bien |
 | `/communes/{code}/resume`, `/quartiers`, `/quartiers/geo`, `/annuel`, `/ventes`, `/comparables` | Fiche commune et drill-down par quartier |
+| `/adresses`, `/communes/{code}/autour` | Recherche d'adresse (Base Adresse Nationale) et prix autour d'un point |
 
 ## Les pages
 
@@ -58,6 +59,7 @@ Principaux endpoints (tous en `GET`, filtres en paramètres : `zone`, `annee_min
 - **Mon budget** : budget (frais de notaire inclus ou non), type, surface et nombre de pièces. Pour chaque commune, la part des ventes comparables qui tenaient dans le budget.
 - **Communes** : carte, comparaison maison et appartement, tableau de toutes les communes.
 - **Fiche commune** (drill-down **commune → quartier → vente**) : prix médian par quartier nommé (« Carmes-République », « Saint-Marceau »…), carte des quartiers colorés par prix, où un clic affiche les ventes du quartier, et tableau des ventes. Une vente sélectionnée est comparée aux ventes similaires (même type, surface à ±20 %).
+- **Filtre par adresse** : sur la fiche commune (« Autour d'une adresse… ») ou depuis la page Communes (tout le Loiret), on tape une adresse et on choisit un rayon (300 m, 500 m, 1 km). La fiche montre alors les prix médians autour de cette adresse, comparés à la commune, ainsi que la carte et la liste des ventes dans le rayon, avec leur distance.
 - **Tendances** : prix et volumes avant et après 2022, carte des variations, plus fortes baisses et hausses.
 - **Méthodologie** : sources, filtres, choix de calcul et limites des données.
 
@@ -99,6 +101,13 @@ uv run pytest
 ```
 
 Les contours des communes (`backend/data/communes_loiret.geojson`) sont dans le dépôt. Pour les régénérer : `uv run python scripts/prepare_geo.py` depuis `backend/`.
+
+### Filtre par adresse
+
+DVF ne publie pas les adresses des biens vendus : on ne peut donc pas filtrer « les ventes du 12 rue Bannier ». À la place, l'adresse saisie est localisée par la [Base Adresse Nationale](https://adresse.data.gouv.fr/) (géocodeur de la Géoplateforme IGN, `data.geopf.fr/geocodage`, appelé par le backend), puis on retient les ventes géolocalisées situées dans le rayon choisi.
+
+- Les ventes de 2026, sans coordonnées, ne sont pas prises en compte autour d'une adresse.
+- L'adresse cherchée ne passe jamais dans l'URL : elle reste en mémoire dans la page.
 
 ### Quartiers
 
@@ -178,6 +187,7 @@ render.yaml            # déploiement des deux services
 - Ventes : **DGFiP, DVF**, Licence Ouverte 2.0. Pour 2021-2025, la version géolocalisée d'Etalab ; pour le 1er semestre 2026, la version brute de la DGFiP.
 - Contours des communes : IGN Admin Express via [geo.api.gouv.fr](https://geo.api.gouv.fr), Licence Ouverte 2.0
 - Quartiers : contours IRIS 2024 (IGN / INSEE) via [OpenDataSoft](https://public.opendatasoft.com/explore/dataset/georef-france-iris/), Licence Ouverte 2.0
+- Adresses : Base Adresse Nationale, via le service de géocodage de la Géoplateforme (IGN), Licence Ouverte 2.0
 - Fonds de carte : © OpenStreetMap contributors, © CARTO
 
 Le cahier des charges d'origine est dans [`05-immobilier.md`](05-immobilier.md).

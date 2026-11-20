@@ -2,9 +2,9 @@
 
 import dash
 import dash_mantine_components as dmc
-from dash import Input, Output, callback, dcc, html, no_update
+from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import api, fmt
+from immo import adresse, api, fmt
 from immo.components import chart_card, grid, icon, legende_fiabilite, page_header, type_control
 from immo import config as cfg
 from immo.api import Filtres
@@ -82,19 +82,30 @@ def layout(**_):
                 "Prix médian au m² des ventes de 2021 à juin 2026. Les communes avec moins de "
                 f"{cfg.SEUIL_FIABILITE} ventes restent grises : leur prix n'est qu'indicatif.",
                 eyebrow="Communes",
-                extra=dmc.Select(
-                    id="communes-search",
-                    placeholder="Ouvrir la fiche d'une commune…",
-                    data=[
-                        {"value": r.code_commune, "label": r.nom_commune}
-                        for r in communes.itertuples()
-                    ],
-                    searchable=True,
-                    clearable=True,
-                    leftSection=icon("tabler:search", 16),
-                    nothingFoundMessage="Aucune commune",
-                    maw=360,
+                extra=dmc.Group(
+                    gap="sm",
                     mt="md",
+                    wrap="wrap",
+                    children=[
+                        dmc.Select(
+                            id="communes-search",
+                            placeholder="Ouvrir la fiche d'une commune…",
+                            data=[
+                                {"value": r.code_commune, "label": r.nom_commune}
+                                for r in communes.itertuples()
+                            ],
+                            searchable=True,
+                            clearable=True,
+                            leftSection=icon("tabler:search", 16),
+                            nothingFoundMessage="Aucune commune",
+                            w=300,
+                        ),
+                        adresse.champ_adresse(
+                            "communes-adresse",
+                            "… ou chercher une adresse du Loiret",
+                            w=360,
+                        ),
+                    ],
                 ),
             ),
             dmc.Grid(
@@ -190,19 +201,36 @@ def maj_comparaison(store, scheme):
 
 
 @callback(
+    Output("communes-adresse", "data"),
+    Input("communes-adresse", "searchValue"),
+    State("communes-adresse", "value"),
+    prevent_initial_call=True,
+)
+def suggerer_adresses(saisie, valeur):
+    return adresse.options(saisie, None, valeur)
+
+
+@callback(
     Output("communes-nav", "href"),
+    Output("adresse-recherchee", "data"),
     Input("communes-map", "clickData"),
     Input("communes-grid", "cellClicked"),
     Input("communes-search", "value"),
+    Input("communes-adresse", "value"),
     prevent_initial_call=True,
 )
-def ouvrir_commune(click, cell, recherche):
+def ouvrir_commune(click, cell, recherche, valeur_adresse):
     trig = dash.ctx.triggered_id
     if trig == "communes-map" and click and click.get("points"):
         code = click["points"][0].get("location")
-        return f"/commune/{code}" if code else no_update
+        return (f"/commune/{code}" if code else no_update), no_update
     if trig == "communes-grid" and cell and cell.get("colId") == "nom_commune":
-        return f"/commune/{cell.get('rowId')}"
+        return f"/commune/{cell.get('rowId')}", no_update
     if trig == "communes-search" and recherche:
-        return f"/commune/{recherche}"
-    return no_update
+        return f"/commune/{recherche}", no_update
+    if trig == "communes-adresse":
+        point = adresse.decoder(valeur_adresse)
+        if point:
+            # L'adresse passe par un store en mémoire, pas par l'URL
+            return f"/commune/{point['code_commune']}", point
+    return no_update, no_update

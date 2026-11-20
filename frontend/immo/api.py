@@ -182,6 +182,7 @@ COLONNES_VENTES = [
     "surface_terrain",
     "latitude",
     "longitude",
+    "distance_m",
 ]
 
 
@@ -193,8 +194,13 @@ def ventes_commune(
     quartier: str | None = None,
     geo: bool = False,
     limit: int | None = None,
+    point: dict | None = None,
+    rayon: int | None = None,
 ) -> tuple[int, pd.DataFrame]:
-    """(nombre total de ventes, ventes les plus récentes d'abord)."""
+    """(nombre total de ventes, ventes les plus récentes d'abord).
+
+    Avec `point` ({lat, lon}) et `rayon` (m) : ventes à moins de `rayon` du point.
+    """
     res = get(
         f"/communes/{code}/ventes",
         f,
@@ -203,6 +209,7 @@ def ventes_commune(
         quartier=quartier,
         geo=geo or None,
         limit=limit,
+        **_autour(point, rayon),
     )
     df = _df(res["ventes"], COLONNES_VENTES)
     df["date_mutation"] = pd.to_datetime(df["date"])
@@ -211,3 +218,21 @@ def ventes_commune(
 
 def comparables_stats(f: Filtres, code: str, type_: str, surface: float, exclure: str) -> dict:
     return get(f"/communes/{code}/comparables", f, type=type_, surface=surface, exclure=exclure)
+
+
+# --------------------------------------------------------------------------- #
+# Adresses
+# --------------------------------------------------------------------------- #
+def _autour(point: dict | None, rayon: int | None) -> dict:
+    if not point:
+        return {}
+    return {"lat": round(point["lat"], 6), "lon": round(point["lon"], 6), "rayon": rayon or 500}
+
+
+def adresses(q: str, commune: str | None = None) -> list[dict]:
+    """Adresses du Loiret (Base Adresse Nationale) correspondant à la saisie."""
+    return get("/adresses", q=q.strip(), commune=commune)
+
+
+def autour(f: Filtres, code: str, point: dict, rayon: int) -> dict:
+    return get(f"/communes/{code}/autour", f, **_autour(point, rayon))

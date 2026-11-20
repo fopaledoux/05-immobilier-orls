@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 import pandas as pd
@@ -29,6 +30,7 @@ from immo_api.config import (
     ZONES,
 )
 from immo_api.data import Filtres
+from immo_api.geo import GeocodageIndisponible, geocoder
 
 app = FastAPI(
     title="Immo Loiret API",
@@ -79,6 +81,26 @@ def filtres(
 
 
 FiltresDep = Annotated[Filtres, Depends(filtres)]
+
+
+@dataclass(frozen=True)
+class Autour:
+    lat: float
+    lon: float
+    rayon: float
+
+
+def autour_param(
+    lat: Annotated[float | None, Query(ge=46.5, le=48.5, description="Latitude du point")] = None,
+    lon: Annotated[float | None, Query(ge=0.5, le=3.5, description="Longitude du point")] = None,
+    rayon: Annotated[float, Query(ge=50, le=3000, description="Rayon en mètres")] = 500,
+) -> Autour | None:
+    """Point (adresse géocodée) et rayon de recherche, facultatifs."""
+    if lat is None and lon is None:
+        return None
+    if lat is None or lon is None:
+        raise HTTPException(422, "lat et lon vont ensemble.")
+    return Autour(round(lat, 6), round(lon, 6), rayon)
 
 
 def records(df: pd.DataFrame) -> list[dict]:
@@ -250,10 +272,19 @@ def ventes_commune(
     section: Annotated[str | None, Query(max_length=4)] = None,
     quartier: Annotated[str | None, Query(max_length=12, description="code_iris")] = None,
     geo: Annotated[bool, Query(description="Ne garder que les ventes géolocalisées")] = False,
+    autour: Annotated[Autour | None, Depends(autour_param)] = None,
     limit: Annotated[int, Query(ge=1, le=20_000)] = 20_000,
 ):
-    """Les plus récentes d'abord. `total` donne le nombre avant `limit`."""
-    df = data.ventes_commune(f, commune_connue(code))
+    """Les plus récentes d'abord. `total` donne le nombre avant `limit`.
+
+    Avec `lat`, `lon` et `rayon` : seulement les ventes géolocalisées à moins de
+    `rayon` mètres du point, avec leur distance (`distance_m`).
+    """
+    code = commune_connue(code)
+    if autour:
+        df = data.ventes_autour(f, code, autour.lat, autour.lon, autour.rayon)
+    else:
+        df = data.ventes_commune(f, code).assign(distance_m=float("nan"))
     if type:
         df = df[df["type"] == type]
     if section:
@@ -279,8 +310,39 @@ def ventes_commune(
         "surface_terrain",
         "latitude",
         "longitude",
+        "distance_m",
     ]
     return {"total": total, "ventes": records(out[cols])}
+
+
+@app.get(
+    "/communes/{code}/autour",
+    tags=["adresse"],
+    summary="Prix médians des ventes autour d'un point de la commune",
+)
+def autour_adresse(
+    f: FiltresDep,
+    code: CodeCommune,
+    autour: Annotated[Autour | None, Depends(autour_param)],
+):
+    if autour is None:
+        raise HTTPException(422, "Paramètres lat, lon (et rayon) requis.")
+    return propre(
+        data.autour_adresse(f, commune_connue(code), autour.lat, autour.lon, autour.rayon)
+    )
+
+
+@app.get("/adresses", tags=["adresse"], summary="Rechercher une adresse du Loiret")
+def adresses(
+    q: Annotated[str, Query(min_length=3, max_length=200, description="Saisie libre")],
+    commune: Annotated[str | None, Query(pattern=r"^\d[\dAB]\d{3}$")] = None,
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+):
+    """Géocodage par la Base Adresse Nationale (Géoplateforme IGN), limité au Loiret."""
+    try:
+        return list(geocoder(q.strip(), commune, limit))
+    except GeocodageIndisponible as exc:
+        raise HTTPException(502, f"Service de géocodage indisponible : {exc}") from exc
 
 
 @app.get(

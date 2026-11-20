@@ -1,4 +1,4 @@
-"""Fiche commune : drill-down commune → quartier (IRIS) → vente."""
+"""Fiche commune : drill-down commune → quartier (IRIS) → vente, ou autour d'une adresse."""
 
 from dataclasses import replace
 
@@ -7,12 +7,13 @@ import dash_mantine_components as dmc
 import pandas as pd
 from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import api, fmt
+from immo import adresse, api, fmt
 from immo import config as cfg
 from immo.api import Filtres
 from immo.components import chart_card, empty_state, grid, icon, stat_tile
 from immo.figures import (
     barres_quartiers,
+    carte_autour,
     carte_quartiers,
     carte_ventes,
     figure_vide,
@@ -92,6 +93,8 @@ def layout(code=None, **_):
             dcc.Store(id="commune-code", data=code),
             dcc.Store(id="commune-quartier", data=None),
             dcc.Store(id="commune-nom", data=nom),
+            dcc.Store(id="commune-adresse-point", data=None),
+            dcc.Store(id="commune-adresse-preset", data=None),
             html.Div(
                 className="page-header",
                 children=[
@@ -137,15 +140,40 @@ def layout(code=None, **_):
                 className="section drill-bar",
                 children=[
                     dmc.Group(
-                        gap="sm",
+                        gap="lg",
+                        wrap="wrap",
                         children=[
-                            dmc.Text("Type de bien", size="sm", fw=600),
-                            dmc.SegmentedControl(
-                                id="commune-type",
-                                data=["Tous", "Maison", "Appartement"],
-                                value="Tous",
-                                size="xs",
-                                radius="xl",
+                            dmc.Group(
+                                gap="sm",
+                                children=[
+                                    dmc.Text("Type de bien", size="sm", fw=600),
+                                    dmc.SegmentedControl(
+                                        id="commune-type",
+                                        data=["Tous", "Maison", "Appartement"],
+                                        value="Tous",
+                                        size="xs",
+                                        radius="xl",
+                                    ),
+                                ],
+                            ),
+                            dmc.Group(
+                                gap="xs",
+                                wrap="wrap",
+                                children=[
+                                    adresse.champ_adresse(
+                                        "commune-adresse",
+                                        f"Autour d'une adresse à {nom}…",
+                                        size="xs",
+                                        radius="xl",
+                                    ),
+                                    dmc.SegmentedControl(
+                                        id="commune-rayon",
+                                        data=adresse.RAYONS,
+                                        value="500",
+                                        size="xs",
+                                        radius="xl",
+                                    ),
+                                ],
                             ),
                         ],
                     ),
@@ -160,6 +188,7 @@ def layout(code=None, **_):
                     ),
                 ],
             ),
+            html.Div(id="commune-autour"),
             dmc.Grid(
                 gutter="md",
                 className="section",
@@ -361,10 +390,15 @@ def maj_quartiers(store, code, type_, quartier, scheme, nom):
     Input("commune-code", "data"),
     Input("commune-type", "value"),
     Input("commune-quartier", "data"),
+    Input("commune-adresse-point", "data"),
+    Input("commune-rayon", "value"),
     Input("color-scheme-store", "data"),
 )
-def maj_carte(store, code, type_, quartier, scheme):
+def maj_carte(store, code, type_, quartier, point, rayon, scheme):
     f = _filtres_commune(store)
+    if point:
+        _, df = api.ventes_commune(f, code, type_=_type(type_), point=point, rayon=int(rayon))
+        return carte_autour(df, scheme, point, int(rayon), point["label"])
     geo = api.quartiers_geo(code)
     if len(geo["features"]) <= 1:
         # Commune sans quartiers : le nuage des ventes, cadré sur la commune
@@ -384,30 +418,68 @@ def maj_carte(store, code, type_, quartier, scheme):
 
 
 @callback(
+    Output("commune-adresse", "data", allow_duplicate=True),
+    Input("commune-adresse", "searchValue"),
+    State("commune-code", "data"),
+    State("commune-adresse", "value"),
+    prevent_initial_call=True,
+)
+def suggerer_adresses(saisie, code, valeur):
+    return adresse.options(saisie, code, valeur)
+
+
+@callback(
+    Output("commune-adresse-preset", "data"),
+    Input("commune-code", "data"),
+    State("adresse-recherchee", "data"),
+)
+def reprendre_adresse(code, recherchee):
+    """Au chargement : reprend l'adresse cherchée sur la page Communes, si c'est ici."""
+    if recherchee and recherchee.get("code_commune") == code:
+        return recherchee
+    return no_update
+
+
+@callback(
     Output("commune-quartier", "data"),
+    Output("commune-adresse-point", "data"),
+    Output("commune-adresse", "value"),
+    Output("commune-adresse", "data"),
     Input("commune-quartiers", "clickData"),
     Input("commune-carte", "clickData"),
     Input("commune-quartier-clear", "n_clicks"),
+    Input("commune-adresse", "value"),
+    Input("commune-adresse-preset", "data"),
     State("commune-quartier", "data"),
     prevent_initial_call=True,
 )
-def choisir_quartier(bar_click, carte_click, _clear, actuel):
+def choisir(bar_click, carte_click, _clear, valeur, preset, actuel):
+    """Un seul filtre de lieu à la fois : un quartier, ou les abords d'une adresse."""
     trig = dash.ctx.triggered_id
+    rien = (no_update, no_update, no_update, no_update)
+    if trig == "commune-adresse-preset":
+        if not preset:
+            return rien
+        v = adresse.encoder(preset)
+        return None, preset, v, [{"value": v, "label": preset["label"]}]
     if trig == "commune-quartier-clear":
-        return None
+        return None, None, None, no_update
+    if trig == "commune-adresse":
+        point = adresse.decoder(valeur)
+        return (None if point else no_update), point, no_update, no_update
     if trig == "commune-quartiers" and bar_click:
         cd = bar_click["points"][0].get("customdata")
         choix = cd[4] if cd else None
     elif trig == "commune-carte" and carte_click:
-        point = carte_click["points"][0]
-        cd = point.get("customdata")
+        p = carte_click["points"][0]
+        cd = p.get("customdata")
         # clic sur un quartier (location) ou sur une vente (customdata[6])
-        choix = point.get("location") or (cd[6] if cd and len(cd) > 6 else None)
+        choix = p.get("location") or (cd[6] if cd and len(cd) > 6 else None)
     else:
-        return no_update
+        return rien
     if not choix:
-        return no_update
-    return None if choix == actuel else choix
+        return rien
+    return (None if choix == actuel else choix), None, None, no_update
 
 
 @callback(
@@ -415,10 +487,13 @@ def choisir_quartier(bar_click, carte_click, _clear, actuel):
     Output("commune-quartier-clear", "children"),
     Output("commune-crumbs", "children"),
     Input("commune-quartier", "data"),
+    Input("commune-adresse-point", "data"),
     State("commune-code", "data"),
     State("commune-nom", "data"),
 )
-def maj_quartier_ui(quartier, code, nom):
+def maj_selection_ui(quartier, point, code, nom):
+    if point:
+        return {}, "Effacer l'adresse", _crumbs(nom, f"Autour de « {point['label']} »")
     if not quartier:
         return {"display": "none"}, "", _crumbs(nom, None)
     nom_q = _nom_quartier(code, quartier) or "Quartier"
@@ -426,17 +501,109 @@ def maj_quartier_ui(quartier, code, nom):
 
 
 @callback(
+    Output("commune-autour", "children"),
+    Input("filters-store", "data"),
+    Input("commune-code", "data"),
+    Input("commune-adresse-point", "data"),
+    Input("commune-rayon", "value"),
+)
+def maj_autour(store, code, point, rayon):
+    """Encadré : prix médians autour de l'adresse, comparés à la commune."""
+    if not point:
+        return None
+    f = _filtres_commune(store)
+    a = api.autour(f, code, point, int(rayon))
+    commune = api.resume_commune(f, code)
+    distance = "1 km" if rayon == "1000" else f"{rayon} m"
+    quartier = a["quartier"]["nom_quartier"] if a.get("quartier") else None
+
+    def tuile(t):
+        d, c = a[t], commune[t]
+        if not d["n"]:
+            valeur, detail = "–", "Aucune vente"
+        else:
+            valeur = fmt.eur_m2(d["pm2_med"])
+            detail = f"sur {fmt.ventes(d['n'])}" + ("" if d["fiable"] else " · indicatif")
+            if c["pm2_med"]:
+                e = d["pm2_med"] / c["pm2_med"] - 1
+                detail += f" · {fmt.pct(e, decimales=0)} vs la commune"
+        return dmc.Paper(
+            withBorder=True,
+            className=f"stat-tile stat-tile--{'maison' if t == 'Maison' else 'appartement'}",
+            children=[
+                dmc.Text(f"{t} · médiane au m²", className="stat-label"),
+                html.Div(valeur, className="stat-value"),
+                dmc.Text(detail, className="stat-detail"),
+            ],
+        )
+
+    entete = [
+        html.Strong(point["label"]),
+        f" · {fmt.ventes(a['n'])} à moins de {distance}",
+    ]
+    if quartier:
+        entete.append(f" · quartier {quartier}")
+    return dmc.Paper(
+        withBorder=True,
+        className="chart-card section autour-card",
+        children=[
+            dmc.Group(
+                gap="xs",
+                children=[
+                    html.Span(icon("tabler:map-pin", 18), className="answer-icon"),
+                    dmc.Text(entete, size="sm"),
+                ],
+            ),
+            dmc.SimpleGrid(
+                cols={"base": 1, "sm": 2},
+                spacing="md",
+                mt="sm",
+                children=[
+                    tuile("Maison"),
+                    tuile("Appartement"),
+                ],
+            ),
+            dmc.Text(
+                "Ventes géolocalisées seulement : celles de 2026 n'ont pas de coordonnées. "
+                "DVF ne publie pas les adresses : on mesure la distance à chaque vente.",
+                size="xs",
+                c="dimmed",
+                mt="sm",
+            ),
+        ],
+    )
+
+
+COLONNE_DISTANCE = {
+    "field": "distance",
+    "headerName": "Distance",
+    "valueFormatter": {"function": "metres(params.value)"},
+    "sort": "asc",
+    "maxWidth": 120,
+}
+
+
+@callback(
     Output("commune-ventes", "rowData"),
+    Output("commune-ventes", "columnDefs"),
     Output("commune-ventes-titre", "children"),
     Input("filters-store", "data"),
     Input("commune-code", "data"),
     Input("commune-type", "value"),
     Input("commune-quartier", "data"),
+    Input("commune-adresse-point", "data"),
+    Input("commune-rayon", "value"),
 )
-def maj_ventes(store, code, type_, quartier):
+def maj_ventes(store, code, type_, quartier, point, rayon):
     f = _filtres_commune(store)
     n_total, df = api.ventes_commune(
-        f, code, type_=_type(type_), quartier=quartier, limit=None if quartier else MAX_LIGNES
+        f,
+        code,
+        type_=_type(type_),
+        quartier=None if point else quartier,
+        point=point,
+        rayon=int(rayon),
+        limit=None if (quartier or point) else MAX_LIGNES,
     )
     tronque = n_total > len(df)
     rows = [
@@ -446,6 +613,7 @@ def maj_ventes(store, code, type_, quartier):
             "type": r.type,
             "quartier": r.nom_quartier,
             "section": r.section,
+            "distance": None if pd.isna(r.distance_m) else r.distance_m,
             "prix": r.valeur_fonciere,
             "surface": r.surface_reelle_bati,
             "pieces": (
@@ -458,6 +626,12 @@ def maj_ventes(store, code, type_, quartier):
         }
         for r in df.itertuples()
     ]
+    if point:
+        colonnes = [{**c, "sort": None} if c["field"] == "date" else c for c in COLONNES_VENTES]
+        colonnes = [COLONNE_DISTANCE, *colonnes]
+        distance = "1 km" if rayon == "1000" else f"{rayon} m"
+        titre = f"{fmt.ventes(n_total)} à moins de {distance} de « {point['label']} »"
+        return rows, colonnes, titre
     titre = fmt.ventes(n_total)
     if quartier:
         titre += f" dans le quartier {_nom_quartier(code, quartier) or ''}"
@@ -465,7 +639,7 @@ def maj_ventes(store, code, type_, quartier):
         titre += (
             f" · les {fmt.entier(len(df))} plus récentes (choisissez un quartier pour tout voir)"
         )
-    return rows, titre
+    return rows, COLONNES_VENTES, titre
 
 
 @callback(

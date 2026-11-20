@@ -22,3 +22,5 @@ dagfuncs.dateFr = (v) => {
   const [y, m, d] = String(v).slice(0, 10).split("-");
   return `${d}/${m}/${y}`;
 };
+dagfuncs.metres = (v) =>
+  v === null || v === undefined ? "–" : nf0.format(v) + "\u202fm";
