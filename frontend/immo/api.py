@@ -244,15 +244,80 @@ def autour(f: Filtres, code: str, point: dict, rayon: int) -> dict:
 LLM_TIMEOUT = 75  # secondes : un appel avec outils peut en enchaîner plusieurs
 
 
-def post(path: str, corps: dict, f: Filtres | None = None) -> dict:
-    url = f"{cfg.API_URL}{path}"
-    try:
-        r = requests.post(url, json=corps, params=f.params() if f else None, timeout=LLM_TIMEOUT)
-    except requests.RequestException as exc:
-        raise ApiError(f"API injoignable ({url}) : {exc}") from exc
+def ip_visiteur() -> str:
+    """IP du visiteur de cette requête Dash, telle que vue par le proxy de l'hébergeur.
+
+    Derrière un proxy (Render), l'IP du navigateur figure dans X-Forwarded-For. Un client
+    peut y écrire ce qu'il veut en tête de liste : on ne garde donc que l'entrée ajoutée
+    par le proxy de confiance, la dernière par défaut (IP_RANG = -1). Sans proxy (local),
+    on prend l'adresse de connexion.
+    """
+    import ipaddress
+
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return "127.0.0.1"
+    chaine = request.headers.get(cfg.IP_EN_TETE, "")
+    entrees = [e.strip() for e in chaine.split(",") if e.strip()]
+    candidat = None
+    if entrees:
+        try:
+            candidat = entrees[cfg.IP_RANG]
+        except IndexError:
+            candidat = None
+    for valeur in (candidat, request.remote_addr):
+        try:
+            return str(ipaddress.ip_address(valeur or ""))
+        except ValueError:
+            continue
+    return "0.0.0.0"
+
+
+def _entetes_assistant() -> dict:
+    """Jeton partagé avec l'API (seul le tableau de bord peut appeler l'assistant) + IP."""
+    entetes = {"X-Visiteur-IP": ip_visiteur()}
+    if cfg.ASSISTANT_TOKEN:
+        entetes["X-Immo-Cle"] = cfg.ASSISTANT_TOKEN
+    return entetes
+
+
+def _reponse_assistant(r: requests.Response, path: str) -> dict:
+    if r.status_code == 429:  # quota du visiteur épuisé : ce n'est pas une panne
+        detail = r.json().get("detail", {})
+        return {
+            "limite_atteinte": True,
+            "erreur": detail.get("message"),
+            "quota": detail.get("quota"),
+        }
     if r.status_code >= 400:
         raise ApiError(f"API {r.status_code} sur {path} : {r.text[:300]}")
     return r.json()
+
+
+def post(path: str, corps: dict, f: Filtres | None = None) -> dict:
+    url = f"{cfg.API_URL}{path}"
+    try:
+        r = requests.post(
+            url,
+            json=corps,
+            params=f.params() if f else None,
+            headers=_entetes_assistant(),
+            timeout=LLM_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise ApiError(f"API injoignable ({url}) : {exc}") from exc
+    return _reponse_assistant(r, path)
+
+
+def quota_visiteur() -> dict:
+    """Demandes restantes du visiteur courant (jamais mis en cache : propre à chacun)."""
+    url = f"{cfg.API_URL}/assistant/quota"
+    try:
+        r = requests.get(url, headers=_entetes_assistant(), timeout=cfg.API_TIMEOUT)
+    except requests.RequestException as exc:
+        raise ApiError(f"API injoignable ({url}) : {exc}") from exc
+    return _reponse_assistant(r, "/assistant/quota")
 
 
 def assistant_statut() -> dict:

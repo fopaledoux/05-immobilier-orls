@@ -106,7 +106,8 @@ def layout(**_):
                         "doit citer le nombre de ventes de chaque chiffre. En discussion, il interroge "
                         "les mêmes données que le tableau de bord.\n\n"
                         "Ses réponses restent à vérifier, et elles ne remplacent ni une visite ni "
-                        "l'avis d'un professionnel. Le nombre de demandes est limité par session ; "
+                        "l'avis d'un professionnel. Le nombre de demandes est limité (20 par 24 h, "
+                        "tous onglets et navigateurs confondus) ; "
                         "si l'assistant ne répond pas, les chiffres restent affichés.",
                     ),
                     _bloc(

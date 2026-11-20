@@ -251,19 +251,17 @@ def graphique(donnees, scheme):
 
 @callback(
     Output("evaluer-explication", "children", allow_duplicate=True),
-    Output("llm-usage", "data", allow_duplicate=True),
+    Output("llm-quota", "data", allow_duplicate=True),
     Input("evaluer-expliquer", "n_clicks"),
     State("evaluer-demande", "data"),
     State("filters-store", "data"),
-    State("llm-usage", "data"),
     prevent_initial_call=True,
 )
-def expliquer(_clic, demande, store, usage):
+def expliquer(_clic, demande, store):
     if not _clic or not demande:  # n_clicks vaut 0 au montage du bouton : pas un clic
         return no_update, no_update
     f = Filtres.from_store(store)
     return assistant.appeler(
-        usage,
         api.expliquer_prix,
         f,
         demande["code"],

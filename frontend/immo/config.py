@@ -14,6 +14,15 @@ API_URL = os.environ.get("API_URL", "http://localhost:8000").rstrip("/")
 # L'offre gratuite de Render met l'API en veille : le premier appel peut être long
 API_TIMEOUT = float(os.environ.get("API_TIMEOUT", "60"))
 
+# Jeton partagé avec l'API : seul le tableau de bord peut appeler l'assistant.
+# En ligne, Render le copie depuis le service API ; en local, il peut rester vide.
+ASSISTANT_TOKEN = os.environ.get("ASSISTANT_TOKEN", "")
+
+# Où lire l'IP du visiteur derrière le proxy de l'hébergeur (voir api.ip_visiteur) :
+# en-tête et position de l'entrée ajoutée par le proxy de confiance (-1 = la dernière).
+IP_EN_TETE = os.environ.get("IP_EN_TETE", "X-Forwarded-For")
+IP_RANG = int(os.environ.get("IP_RANG", "-1"))
+
 ZONES = {
     "metropole": {
         "label": "Orléans Métropole",

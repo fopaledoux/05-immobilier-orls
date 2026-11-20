@@ -1,4 +1,4 @@
-# Blueprint Render : deux services web, un par dossier.
+# Blueprint Render : deux services web (un par dossier) et un Key Value pour les quotas.
 # Render › New › Blueprint › ce dépôt. À la création, Render demande API_URL :
 # saisir l'URL publique du service API (ex. https://immo-loiret-api.onrender.com).
 services:
@@ -23,6 +23,22 @@ services:
         value: gemini-3.5-flash-lite
       - key: LLM_QUOTA_HEURE
         value: "300"
+      # Quota par visiteur (20 demandes / 24 h), compté côté serveur dans le Key Value
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: immo-loiret-quota
+          property: connectionString
+      - key: QUOTA_PAR_VISITEUR
+        value: "20"
+      - key: QUOTA_FENETRE_HEURES
+        value: "24"
+      # Secrets générés par Render (jamais dans le dépôt) :
+      # jeton partagé avec le tableau de bord, clé d'empreinte des IP
+      - key: ASSISTANT_TOKEN
+        generateValue: true
+      - key: QUOTA_SEL
+        generateValue: true
 
   - type: web
     name: immo-loiret-web
@@ -44,3 +60,17 @@ services:
         value: "60"
       - key: DASH_DEBUG
         value: "0"
+      # Même jeton que l'API, copié par Render : seul ce service peut appeler l'assistant
+      - key: ASSISTANT_TOKEN
+        fromService:
+          type: web
+          name: immo-loiret-api
+          envVarKey: ASSISTANT_TOKEN
+
+  # Compteurs de demandes à l'assistant (offre gratuite : en mémoire, sans disque ;
+  # un redémarrage du Key Value remet les compteurs à zéro). Aucun accès public.
+  - type: keyvalue
+    name: immo-loiret-quota
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction

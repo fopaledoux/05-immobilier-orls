@@ -328,8 +328,8 @@ def serve_layout():
             dcc.Store(id="filters-store", storage_type="session", data=cfg.FILTRES_DEFAUT),
             # Dernière adresse cherchée (en mémoire seulement, jamais dans l'URL)
             dcc.Store(id="adresse-recherchee", storage_type="memory"),
-            # Nombre de demandes à l'assistant pendant la session (limite par visiteur)
-            dcc.Store(id="llm-usage", storage_type="session", data=0),
+            # Demandes restantes à l'assistant : simple affichage, l'API compte et décide
+            dcc.Store(id="llm-quota", storage_type="memory"),
             assistant.bulle() if _assistant_actif() else None,
             dmc.AppShell(
                 header={"height": 68},

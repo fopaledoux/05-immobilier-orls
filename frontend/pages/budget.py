@@ -369,7 +369,7 @@ def effacer_conseil(*_):
 
 @callback(
     Output("budget-conseil-texte", "children", allow_duplicate=True),
-    Output("llm-usage", "data", allow_duplicate=True),
+    Output("llm-quota", "data", allow_duplicate=True),
     Input("budget-conseil", "n_clicks"),
     State("filters-store", "data"),
     State("budget-montant", "value"),
@@ -377,14 +377,12 @@ def effacer_conseil(*_):
     State("budget-type", "value"),
     State("budget-surface", "value"),
     State("budget-pieces", "value"),
-    State("llm-usage", "data"),
     prevent_initial_call=True,
 )
-def conseiller(_clic, store, montant, frais, type_, surface, pieces, usage):
+def conseiller(_clic, store, montant, frais, type_, surface, pieces):
     if not _clic or not montant:  # n_clicks vaut 0 au montage du bouton : pas un clic
         return no_update, no_update
     return assistant.appeler(
-        usage,
         api.conseil_budget,
         Filtres.from_store(store),
         float(montant),

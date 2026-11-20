@@ -77,7 +77,20 @@ L'appli intègre un assistant basé sur **Google Gemini** (offre gratuite), appe
 
 **Règle de fond : le LLM ne calcule rien.** L'API calcule les médianes, écarts et nombres de ventes ; Gemini ne fait que les expliquer. Pour la discussion, il dispose de quelques **outils** limités à nos données (`chercher_commune`, `prix_commune`, `prix_par_quartier`, `communes_pour_budget`, `classement_communes`, `evolution_des_prix`, `evolution_commune`, `evaluer_un_prix`) et doit citer le nombre de ventes qui fonde chaque chiffre.
 
-**Garde-fous** : 20 demandes à l'assistant par visiteur et par session ; plafond global de requêtes par heure côté API (`LLM_QUOTA_HEURE`) pour préserver le quota gratuit ; délai maximal par appel ; **repli sans LLM** si Gemini ne répond pas (pas de clé, quota, panne) : les chiffres restent affichés, seul le texte manque. Sans clé configurée, la bulle et les boutons de l'assistant n'apparaissent pas.
+**Garde-fous** : 20 demandes à l'assistant par visiteur sur 24 heures glissantes, comptées côté serveur (voir ci-dessous) ; plafond global de requêtes par heure côté API (`LLM_QUOTA_HEURE`) pour préserver le quota gratuit ; délai maximal par appel ; **repli sans LLM** si Gemini ne répond pas (pas de clé, quota, panne) : les chiffres restent affichés, seul le texte manque. Sans clé configurée, la bulle et les boutons de l'assistant n'apparaissent pas.
+
+### Sécurité du quota de l'assistant
+
+Un compteur tenu par le navigateur se contourne en ouvrant un onglet, une fenêtre privée ou un autre navigateur. Le quota est donc **compté par l'API**, pour chaque visiteur :
+
+- **Identité** : l'adresse IP du visiteur, commune à tous ses onglets, fenêtres et navigateurs sur un même poste. Le dashboard la lit derrière le proxy de Render : il ne retient que la dernière entrée de `X-Forwarded-For`, celle ajoutée par le proxy (réglage `IP_RANG`), et non une valeur envoyée par le navigateur.
+- **Données personnelles** : l'IP n'est jamais stockée en clair. On n'en garde qu'une empreinte HMAC-SHA256 avec une clé secrète (`QUOTA_SEL`), qui expire au bout de 24 h.
+- **Accès direct fermé** : les endpoints `/assistant/*` exigent un jeton partagé (`ASSISTANT_TOKEN`) que seul le dashboard connaît. Un appel direct à l'API répond `401` : impossible de contourner le quota ou de choisir son IP.
+- **Fenêtre glissante de 24 h**, réservation atomique (script Lua), demande rendue si Gemini échoue. Si le compteur ne répond pas, l'API refuse (`503`) plutôt que de laisser passer sans limite.
+- **Stockage** : Render Key Value (`REDIS_URL`), qui ne s'endort pas avec l'API. Sur l'offre gratuite, ce Key Value garde ses données en mémoire : s'il redémarre, les compteurs repartent à zéro.
+- `render.yaml` crée le Key Value, et Render génère lui-même `ASSISTANT_TOKEN` et `QUOTA_SEL`, puis copie le jeton vers le dashboard. Aucun secret n'est dans le dépôt.
+
+Limites connues : plusieurs personnes derrière la même box ou le même réseau d'entreprise partagent un quota. À l'inverse, un changement d'IP (4G, VPN) en ouvre un nouveau.
 
 > Sur l'offre gratuite de Gemini, Google peut utiliser les échanges pour améliorer ses produits : ne saisissez pas d'informations personnelles dans le chat.
 

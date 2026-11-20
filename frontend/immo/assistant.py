@@ -2,8 +2,9 @@
 
 - Le LLM est appelé par le backend, qui seul détient la clé ; ici on n'envoie
   que la question, l'historique récent et le contexte de la page.
-- Garde-fou « par visiteur » : un compteur en session (`llm-usage`) limite le
-  nombre de demandes à l'assistant (chat, explications, conseils).
+- Garde-fou « par visiteur » : le quota (20 demandes par 24 h) est compté par
+  l'API, par IP du visiteur : il vaut pour tous ses onglets, fenêtres et
+  navigateurs. Ici, on ne fait qu'afficher l'état renvoyé (store `llm-quota`).
 - Repli : si l'assistant ne répond pas, on l'indique sans masquer les chiffres.
 """
 
@@ -16,7 +17,6 @@ from immo import api
 from immo.api import Filtres
 from immo.components import icon
 
-LIMITE = 20  # demandes à l'assistant par visiteur et par session
 HISTORIQUE_MAX = 10  # messages renvoyés au modèle
 
 SUGGESTIONS = [
@@ -40,10 +40,35 @@ LIBELLES_OUTILS = {
 # --------------------------------------------------------------------------- #
 # Rendu partagé (explications de prix, conseil budget)
 # --------------------------------------------------------------------------- #
-def limite_atteinte():
+def _heure_recharge(quota: dict | None) -> str:
+    """« vers 14 h 05 » (heure de Paris) : quand la prochaine demande se libère."""
+    iso = (quota or {}).get("prochaine_recharge")
+    if not iso:
+        return "dans 24 heures au plus"
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    instant = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(
+        ZoneInfo("Europe/Paris")
+    )
+    jour = "" if instant.date() == datetime.now(ZoneInfo("Europe/Paris")).date() else " demain"
+    return f"{jour} vers {instant:%H} h {instant:%M}".strip()
+
+
+def message_limite(quota: dict | None) -> str:
+    limite = (quota or {}).get("limite", 20)
+    heures = (quota or {}).get("fenetre_heures", 24)
+    return (
+        f"Vous avez utilisé vos {limite} demandes à l'assistant sur {heures} heures "
+        f"(tous onglets et navigateurs confondus). Prochaine demande disponible "
+        f"{_heure_recharge(quota)}."
+    )
+
+
+def limite_atteinte(quota: dict | None = None):
     return dmc.Alert(
-        f"Vous avez utilisé vos {LIMITE} demandes à l'assistant pour cette session. "
-        "Les chiffres et graphiques du tableau de bord restent disponibles.",
+        message_limite(quota)
+        + " Les chiffres et graphiques du tableau de bord restent disponibles.",
         color="gray",
         icon=icon("tabler:hourglass"),
         title="Limite atteinte",
@@ -77,16 +102,19 @@ def texte_assistant(res: dict | None, erreur: str | None = None):
     )
 
 
-def appeler(usage: int | None, fonction, *args):
-    """Appelle l'assistant si la limite n'est pas atteinte : (composant, nouvel usage)."""
-    usage = usage or 0
-    if usage >= LIMITE:
-        return limite_atteinte(), no_update
+def appeler(fonction, *args):
+    """Appelle l'assistant ; le quota est vérifié et décompté par l'API.
+
+    Renvoie (composant, état du quota pour le store `llm-quota`).
+    """
     try:
         res = fonction(*args)
     except api.ApiError as exc:
-        return texte_assistant(None, f"API injoignable : {exc}"), usage
-    return texte_assistant(res), usage + 1
+        return texte_assistant(None, f"API injoignable : {exc}"), no_update
+    quota = res.get("quota") or no_update
+    if res.get("limite_atteinte"):
+        return limite_atteinte(res.get("quota")), quota
+    return texte_assistant(res), quota
 
 
 # --------------------------------------------------------------------------- #
@@ -237,14 +265,35 @@ def ouvrir(clic):
 
 
 @callback(
+    Output("llm-quota", "data"),
+    Input("assistant-panneau", "opened"),
+    prevent_initial_call=True,
+)
+def lire_quota(ouvert):
+    """À l'ouverture du panneau : demandes restantes selon l'API (toutes sessions confondues)."""
+    if not ouvert:
+        return no_update
+    try:
+        return api.quota_visiteur()
+    except api.ApiError:
+        return no_update
+
+
+@callback(
     Output("assistant-messages", "children"),
     Output("assistant-compteur", "children"),
     Input("assistant-historique", "data"),
-    Input("llm-usage", "data"),
+    Input("llm-quota", "data"),
 )
-def afficher(historique, usage):
-    reste = max(LIMITE - (usage or 0), 0)
-    compteur = f"{reste} demande{'s' if reste > 1 else ''} restante{'s' if reste > 1 else ''}"
+def afficher(historique, quota):
+    if quota and "restantes" in quota:
+        reste = quota["restantes"]
+        compteur = (
+            f"{reste} demande{'s' if reste > 1 else ''} restante{'s' if reste > 1 else ''} "
+            f"sur {quota['limite']} (24 h)"
+        )
+    else:
+        compteur = ""
     if not historique:
         return (
             html.Div(
@@ -279,10 +328,10 @@ def afficher(historique, usage):
     State("assistant-saisie", "value"),
     State("assistant-historique", "data"),
     State("assistant-attente", "data"),
-    State("llm-usage", "data"),
+    State("llm-quota", "data"),
     prevent_initial_call=True,
 )
-def poser(_envoi, suggestions, _effacer, saisie, historique, attente, usage):
+def poser(_envoi, suggestions, _effacer, saisie, historique, attente, quota):
     """Étape 1 (immédiate) : affiche la question, puis déclenche la réponse."""
     trig = ctx.triggered_id
     if not ctx.triggered or not ctx.triggered[0]["value"]:
@@ -298,30 +347,24 @@ def poser(_envoi, suggestions, _effacer, saisie, historique, attente, usage):
     if not question:
         return no_update, no_update, no_update
     historique = list(historique or []) + [{"role": "user", "content": question}]
-    if (usage or 0) >= LIMITE:
-        historique.append(
-            {
-                "role": "assistant",
-                "erreur": True,
-                "content": f"Vous avez utilisé vos {LIMITE} demandes pour cette session.",
-            }
-        )
+    if quota and quota.get("restantes") == 0:
+        # Affichage immédiat ; l'API refuserait de toute façon (elle seule fait foi)
+        historique.append({"role": "assistant", "erreur": True, "content": message_limite(quota)})
         return historique, "", no_update
     return historique, "", (attente or 0) + 1
 
 
 @callback(
     Output("assistant-historique", "data", allow_duplicate=True),
-    Output("llm-usage", "data", allow_duplicate=True),
+    Output("llm-quota", "data", allow_duplicate=True),
     Input("assistant-attente", "data"),
     State("assistant-historique", "data"),
     State("filters-store", "data"),
     State("_pages_location", "pathname"),
-    State("llm-usage", "data"),
     running=[(Output("assistant-ecrit", "style"), {}, {"display": "none"})],
     prevent_initial_call=True,
 )
-def repondre(_attente, historique, store, pathname, usage):
+def repondre(_attente, historique, store, pathname):
     """Étape 2 : interroge l'assistant (via l'API) et ajoute sa réponse."""
     historique = list(historique or [])
     if not historique or historique[-1]["role"] != "user":
@@ -335,16 +378,15 @@ def repondre(_attente, historique, store, pathname, usage):
         res = api.chat(Filtres.from_store(store), messages, _contexte(pathname))
     except api.ApiError as exc:
         res = {"reponse": None, "erreur": f"API injoignable : {exc}"}
+    quota = res.get("quota") or no_update
     if res.get("reponse"):
         historique.append(
             {"role": "assistant", "content": res["reponse"], "outils": res.get("outils")}
         )
-        return historique, (usage or 0) + 1
-    historique.append(
-        {
-            "role": "assistant",
-            "erreur": True,
-            "content": f"L'assistant ne peut pas répondre pour le moment ({res.get('erreur')}).",
-        }
-    )
-    return historique, no_update
+        return historique, quota
+    if res.get("limite_atteinte"):
+        message = message_limite(res.get("quota"))
+    else:
+        message = f"L'assistant ne peut pas répondre pour le moment ({res.get('erreur')})."
+    historique.append({"role": "assistant", "erreur": True, "content": message})
+    return historique, quota

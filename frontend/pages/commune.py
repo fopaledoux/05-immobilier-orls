@@ -755,20 +755,18 @@ def preparer_explication(selected):
 
 @callback(
     Output("commune-explication", "children", allow_duplicate=True),
-    Output("llm-usage", "data", allow_duplicate=True),
+    Output("llm-quota", "data", allow_duplicate=True),
     Input("commune-expliquer", "n_clicks"),
     State("commune-ventes", "selectedRows"),
     State("filters-store", "data"),
     State("commune-code", "data"),
-    State("llm-usage", "data"),
     prevent_initial_call=True,
 )
-def expliquer_vente(_clic, selected, store, code, usage):
+def expliquer_vente(_clic, selected, store, code):
     if not _clic or not selected:  # n_clicks vaut 0 au montage du bouton : pas un clic
         return no_update, no_update
     v = selected[0]
     return assistant.appeler(
-        usage,
         api.expliquer_prix,
         _filtres_commune(store),
         code,
