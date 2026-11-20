@@ -4,10 +4,10 @@ import dash
 import dash_mantine_components as dmc
 from dash import Input, Output, callback, dcc, html, no_update
 
-from immo import data, fmt
+from immo import api, fmt
 from immo.components import chart_card, grid, icon, legende_fiabilite, page_header
-from immo.config import SEUIL_FIABILITE, TAUX_FRAIS_NOTAIRE, TYPES, ZONES
-from immo.data import Filtres
+from immo import config as cfg
+from immo.api import Filtres
 from immo.figures import carte_communes
 
 dash.register_page(__name__, path="/budget", name="Mon budget", order=1)
@@ -96,7 +96,7 @@ def layout(**_):
                                 ),
                                 dmc.Checkbox(
                                     id="budget-frais",
-                                    label=f"Frais de notaire inclus (~{TAUX_FRAIS_NOTAIRE:.1%})".replace(
+                                    label=f"Frais de notaire inclus (~{cfg.TAUX_FRAIS_NOTAIRE:.1%})".replace(
                                         ".", ","
                                     ),
                                     checked=True,
@@ -110,7 +110,7 @@ def layout(**_):
                                 dmc.Text("Type de bien", size="sm", fw=500, mb=4),
                                 dmc.SegmentedControl(
                                     id="budget-type",
-                                    data=list(TYPES),
+                                    data=list(cfg.TYPES),
                                     value="Maison",
                                     fullWidth=True,
                                 ),
@@ -193,7 +193,7 @@ def layout(**_):
 
 def _params(montant, frais):
     montant = float(montant or 0)
-    return montant / (1 + TAUX_FRAIS_NOTAIRE) if frais else montant
+    return montant / (1 + cfg.TAUX_FRAIS_NOTAIRE) if frais else montant
 
 
 @callback(
@@ -229,7 +229,7 @@ def maj_budget(store, montant, frais, type_, surface, pieces, scheme):
     prix_bien = _params(montant, frais)
     surface = float(surface or 0)
     pieces = int(pieces or 0)
-    df = data.budget_communes(f, type_, prix_bien, surface, pieces)
+    df = api.budget_communes(f, type_, prix_bien, surface, pieces)
 
     fig = carte_communes(
         df,
@@ -292,8 +292,8 @@ def maj_budget(store, montant, frais, type_, surface, pieces, scheme):
                         for r in ok.head(3).itertuples()
                     )
                 ),
-                f". Calcul sur les communes ayant au moins {SEUIL_FIABILITE} ventes comparables "
-                f"({len(fiables)} dans {ZONES[f.zone]['label']}).",
+                f". Calcul sur les communes ayant au moins {cfg.SEUIL_FIABILITE} ventes comparables "
+                f"({len(fiables)} dans {cfg.ZONES[f.zone]['label']}).",
             ]
         else:
             meilleur = fiables.sort_values("part_sous_budget", ascending=False).head(1)

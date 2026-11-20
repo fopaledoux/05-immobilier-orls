@@ -4,10 +4,10 @@ import dash
 import dash_mantine_components as dmc
 from dash import Input, Output, callback, dcc, html, no_update
 
-from immo import data, fmt
+from immo import api, fmt
 from immo.components import chart_card, grid, icon, legende_fiabilite, page_header, type_control
-from immo.config import SEUIL_FIABILITE
-from immo.data import Filtres
+from immo import config as cfg
+from immo.api import Filtres
 from immo.figures import carte_communes, maison_vs_appart
 
 dash.register_page(__name__, path="/communes", name="Communes", order=2)
@@ -73,14 +73,14 @@ COLONNES = [
 
 
 def layout(**_):
-    communes = data.communes_index()
+    communes = api.communes_index()
     return html.Div(
         [
             dcc.Location(id="communes-nav", refresh="callback-nav"),
             page_header(
                 "Combien coûte le m², commune par commune ?",
                 "Prix médian au m² des ventes de 2021 à 2025. Les communes avec moins de "
-                f"{SEUIL_FIABILITE} ventes restent grises : leur prix n'est qu'indicatif.",
+                f"{cfg.SEUIL_FIABILITE} ventes restent grises : leur prix n'est qu'indicatif.",
                 eyebrow="Communes",
                 extra=dmc.Select(
                     id="communes-search",
@@ -117,7 +117,7 @@ def layout(**_):
                         children=chart_card(
                             "Maison ou appartement : l'écart au m²",
                             "communes-dumbbell",
-                            subtitle=f"Les 15 communes les plus actives ayant {SEUIL_FIABILITE} ventes de chaque type.",
+                            subtitle=f"Les 15 communes les plus actives ayant {cfg.SEUIL_FIABILITE} ventes de chaque type.",
                             height=520,
                         ),
                     ),
@@ -129,7 +129,7 @@ def layout(**_):
                 children=[
                     dmc.Text("Toutes les communes de la zone", className="chart-title"),
                     dmc.Text(
-                        f"Nombre de ventes en gris : moins de {SEUIL_FIABILITE}, prix indicatif. "
+                        f"Nombre de ventes en gris : moins de {cfg.SEUIL_FIABILITE}, prix indicatif. "
                         "Cliquez sur un nom pour la fiche commune.",
                         className="chart-subtitle",
                         mb="sm",
@@ -149,7 +149,7 @@ def layout(**_):
 )
 def maj_carte(store, type_, scheme):
     f = Filtres.from_store(store)
-    stats = data.stats_communes(f, type_)
+    stats = api.stats_communes(f, type_)
     return carte_communes(
         stats,
         scheme,
@@ -173,7 +173,7 @@ def maj_carte(store, type_, scheme):
 )
 def maj_comparaison(store, scheme):
     f = Filtres.from_store(store)
-    df = data.stats_communes_comparees(f)
+    df = api.stats_communes_comparees(f)
     cols = [
         "code_commune",
         "nom_commune",

@@ -4,16 +4,21 @@ import dash
 import dash_mantine_components as dmc
 from dash import Input, Output, callback, dcc, html, no_update
 
-from immo import data, fmt
+from immo import api, fmt
 from immo.components import chart_card, legende_fiabilite, page_header, stat_tile, type_control
-from immo.config import PERIODE_APRES, PERIODE_AVANT, SEUIL_FIABILITE
-from immo.data import Filtres
+from immo import config as cfg
+from immo.api import Filtres
 from immo.figures import barres_evolution, carte_communes, tendance_trimestrielle, volumes_annuels
 
 dash.register_page(__name__, path="/tendances", name="Tendances", order=3)
 
-AV = f"{PERIODE_AVANT[0]}-{PERIODE_AVANT[1]}"
-AP = f"{PERIODE_APRES[0]}-{PERIODE_APRES[1]}"
+
+def _av():
+    return f"{cfg.PERIODE_AVANT[0]}-{cfg.PERIODE_AVANT[1]}"
+
+
+def _ap():
+    return f"{cfg.PERIODE_APRES[0]}-{cfg.PERIODE_APRES[1]}"
 
 
 def layout(**_):
@@ -22,7 +27,7 @@ def layout(**_):
             dcc.Location(id="tendances-nav", refresh="callback-nav"),
             page_header(
                 "Les prix ont-ils baissé depuis la hausse des taux ?",
-                f"On compare {AV} (avant la remontée des taux, été 2022) à {AP}. "
+                f"On compare {_av()} (avant la remontée des taux, été 2022) à {_ap()}. "
                 "Ces graphiques couvrent toujours les 5 années, quel que soit le filtre d'années.",
                 eyebrow="Tendances",
             ),
@@ -77,9 +82,9 @@ def layout(**_):
                     dmc.GridCol(
                         span={"base": 12, "lg": 7},
                         children=chart_card(
-                            f"Variation du €/m² médian, {AV} → {AP}",
+                            f"Variation du €/m² médian, {_av()} → {_ap()}",
                             "tend-map",
-                            subtitle=f"Bleu : baisse · rouge : hausse. Gris : moins de {SEUIL_FIABILITE} ventes sur l'une des périodes.",
+                            subtitle=f"Bleu : baisse · rouge : hausse. Gris : moins de {cfg.SEUIL_FIABILITE} ventes sur l'une des périodes.",
                             controls=type_control("tend-type"),
                             height=480,
                             footer=legende_fiabilite(),
@@ -90,7 +95,7 @@ def layout(**_):
                         children=chart_card(
                             "Les plus fortes baisses et hausses",
                             "tend-bars",
-                            subtitle=f"Communes avec au moins {SEUIL_FIABILITE} ventes sur chaque période.",
+                            subtitle=f"Communes avec au moins {cfg.SEUIL_FIABILITE} ventes sur chaque période.",
                             height=480,
                         ),
                     ),
@@ -112,7 +117,7 @@ def layout(**_):
     Input("filters-store", "data"),
 )
 def maj_kpis(store):
-    evo = data.evolution_globale(Filtres.from_store(store))
+    evo = api.evolution_globale(Filtres.from_store(store))
     out = []
     for t in ("Maison", "Appartement"):
         e = evo.get(t)
@@ -144,8 +149,8 @@ def maj_kpis(store):
 def maj_courbes(store, scheme):
     f = Filtres.from_store(store)
     return (
-        tendance_trimestrielle(data.stats_trimestrielles(f), scheme),
-        volumes_annuels(data.stats_annuelles(f), scheme),
+        tendance_trimestrielle(api.stats_trimestrielles(f), scheme),
+        volumes_annuels(api.stats_annuelles(f), scheme),
     )
 
 
@@ -158,7 +163,7 @@ def maj_courbes(store, scheme):
 )
 def maj_carte(store, type_, scheme):
     f = Filtres.from_store(store)
-    df = data.evolution_communes(f, type_)
+    df = api.evolution_communes(f, type_)
     fig = carte_communes(
         df,
         scheme,
@@ -168,8 +173,8 @@ def maj_carte(store, type_, scheme):
         format_valeur=lambda v: fmt.pct(v, decimales=0),
         lignes_hover=lambda r: [
             f"{type_} : <b>{fmt.pct(r['var'])}</b>",
-            f"{AV} : {fmt.eur_m2(r['pm2_med_avant'])} ({fmt.ventes(r['n_avant'])})",
-            f"{AP} : {fmt.eur_m2(r['pm2_med_apres'])} ({fmt.ventes(r['n_apres'])})",
+            f"{_av()} : {fmt.eur_m2(r['pm2_med_avant'])} ({fmt.ventes(r['n_avant'])})",
+            f"{_ap()} : {fmt.eur_m2(r['pm2_med_apres'])} ({fmt.ventes(r['n_apres'])})",
         ],
         divergente=True,
     )

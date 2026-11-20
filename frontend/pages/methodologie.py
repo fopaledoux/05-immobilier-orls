@@ -6,7 +6,7 @@ from dash import dcc, html
 
 from immo import fmt
 from immo.components import icon, page_header
-from immo.config import BORNES, PERIODE_APRES, PERIODE_AVANT, SEUIL_FIABILITE, TAUX_FRAIS_NOTAIRE
+from immo import config as cfg
 
 dash.register_page(__name__, path="/methodologie", name="Méthodologie", order=4)
 
@@ -30,10 +30,10 @@ def _bloc(titre, ico, contenu):
 
 
 def layout(**_):
-    p0, p1 = BORNES["prix"]
-    s0, s1 = BORNES["surface"]
-    m0, m1 = BORNES["prix_m2"]
-    frais = f"{TAUX_FRAIS_NOTAIRE:.1%}".replace(".", ",")
+    p0, p1 = cfg.BORNES["prix"]
+    s0, s1 = cfg.BORNES["surface"]
+    m0, m1 = cfg.BORNES["prix_m2"]
+    frais = f"{cfg.TAUX_FRAIS_NOTAIRE:.1%}".replace(".", ",")
     return html.Div(
         [
             page_header(
@@ -74,7 +74,7 @@ def layout(**_):
                         "au-dessous. Contrairement à la moyenne, la médiane ne monte pas à cause de quelques "
                         "ventes très chères.\n\n"
                         f"Une médiane calculée sur peu de ventes n'est pas fiable : en dessous de "
-                        f"**{SEUIL_FIABILITE} ventes**, une commune ou une section reste en gris et son prix est "
+                        f"**{cfg.SEUIL_FIABILITE} ventes**, une commune ou une section reste en gris et son prix est "
                         "dit *indicatif*. Le nombre de ventes est toujours affiché à côté du prix.",
                     ),
                     _bloc(
@@ -90,9 +90,9 @@ def layout(**_):
                     _bloc(
                         "Tendances",
                         "tabler:chart-line",
-                        f"On compare deux périodes de deux ans : **{PERIODE_AVANT[0]}-{PERIODE_AVANT[1]}** "
+                        f"On compare deux périodes de deux ans : **{cfg.PERIODE_AVANT[0]}-{cfg.PERIODE_AVANT[1]}** "
                         f"(avant et pendant la remontée des taux, entamée à l'été 2022) et "
-                        f"**{PERIODE_APRES[0]}-{PERIODE_APRES[1]}**. Des périodes de deux ans donnent assez de "
+                        f"**{cfg.PERIODE_APRES[0]}-{cfg.PERIODE_APRES[1]}**. Des périodes de deux ans donnent assez de "
                         "ventes par commune pour une médiane stable.\n\n"
                         "La variation des volumes compare le nombre moyen de ventes **par an**.",
                     ),

@@ -4,18 +4,24 @@ import dash
 import dash_mantine_components as dmc
 from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import data, fmt
+from immo import api, fmt
 from immo.components import answer_card, chart_card, legende_fiabilite, stat_tile, type_control
-from immo.config import PERIODE_APRES, PERIODE_AVANT, SEUIL_FIABILITE, TAUX_FRAIS_NOTAIRE, ZONES
-from immo.data import Filtres
+from immo import config as cfg
+from immo.api import Filtres
 from immo.figures import carte_communes, tendance_trimestrielle
 
 dash.register_page(__name__, path="/", name="Vue d'ensemble", order=0)
 
 BUDGET_EXEMPLE = 300_000
 SURFACE_EXEMPLE = 100
-AV = f"{PERIODE_AVANT[0]}-{PERIODE_AVANT[1] % 100}"
-AP = f"{PERIODE_APRES[0]}-{PERIODE_APRES[1] % 100}"
+
+
+def _av():
+    return f"{cfg.PERIODE_AVANT[0]}-{cfg.PERIODE_AVANT[1] % 100}"
+
+
+def _ap():
+    return f"{cfg.PERIODE_APRES[0]}-{cfg.PERIODE_APRES[1] % 100}"
 
 
 def layout(**_):
@@ -53,7 +59,9 @@ def layout(**_):
                         "appartement",
                     ),
                     stat_tile("Prix médian d'une maison", "kpi-maison-prix", "kpi-maison-surf"),
-                    stat_tile(f"Évolution €/m² maison, {AV} → {AP}", "kpi-evol", "kpi-evol-detail"),
+                    stat_tile(
+                        f"Évolution €/m² maison, {_av()} → {_ap()}", "kpi-evol", "kpi-evol-detail"
+                    ),
                 ],
             ),
             dmc.SimpleGrid(
@@ -128,13 +136,11 @@ def layout(**_):
 )
 def maj_kpis(store):
     f = Filtres.from_store(store)
-    k = data.kpis(f)
-    evo = data.evolution_globale(f).get("Maison")
+    k = api.kpis(f)
+    evo = api.evolution_globale(f).get("Maison")
     m, a = k["Maison"], k["Appartement"]
     periode = f"{f.annee_min}" if f.annee_min == f.annee_max else f"{f.annee_min}-{f.annee_max}"
-    eyebrow = (
-        f"{ZONES[f.zone]['label']} · {fmt.ventes(k['n'])} · {k['n_communes']} communes · {periode}"
-    )
+    eyebrow = f"{cfg.ZONES[f.zone]['label']} · {fmt.ventes(k['n'])} · {k['n_communes']} communes · {periode}"
     evo_val = fmt.pct(evo["pm2_var"]) if evo else "–"
     evo_det = (
         f"{fmt.eur_m2(evo['pm2_avant'])} → {fmt.eur_m2(evo['pm2_apres'])}"
@@ -171,14 +177,14 @@ def maj_reponses(store):
     f = Filtres.from_store(store)
 
     # 1. Budget : combien faut-il prévoir, et que permet le budget exemple ?
-    prix_bien = BUDGET_EXEMPLE / (1 + TAUX_FRAIS_NOTAIRE)
-    b = data.budget_communes(f, "Maison", prix_bien, SURFACE_EXEMPLE, 0)
+    prix_bien = BUDGET_EXEMPLE / (1 + cfg.TAUX_FRAIS_NOTAIRE)
+    b = api.budget_communes(f, "Maison", prix_bien, SURFACE_EXEMPLE, 0)
     fiables = b[b["fiable"]].sort_values("prix_med")
     if fiables.empty:
         budget = html.P("Pas assez de ventes comparables avec ces filtres.")
     else:
         bas, haut = fiables.iloc[0], fiables.iloc[-1]
-        frais = 1 + TAUX_FRAIS_NOTAIRE
+        frais = 1 + cfg.TAUX_FRAIS_NOTAIRE
         ok = fiables[fiables["dans_budget"]].sort_values("n", ascending=False)
         if len(ok):
             detail = [
@@ -207,8 +213,8 @@ def maj_reponses(store):
             ),
             html.P(detail, className="answer-detail"),
             html.P(
-                f"Prix médians, frais de notaire (~{TAUX_FRAIS_NOTAIRE:.1%}) inclus, sur les {len(fiables)} "
-                f"communes ayant au moins {SEUIL_FIABILITE} ventes comparables.".replace(
+                f"Prix médians, frais de notaire (~{cfg.TAUX_FRAIS_NOTAIRE:.1%}) inclus, sur les {len(fiables)} "
+                f"communes ayant au moins {cfg.SEUIL_FIABILITE} ventes comparables.".replace(
                     ".5%", ",5 %"
                 ),
                 className="answer-foot",
@@ -216,9 +222,9 @@ def maj_reponses(store):
         ]
 
     # 2. Prix par commune
-    sm = data.stats_communes(f, "Maison")
+    sm = api.stats_communes(f, "Maison")
     sm = sm[sm["fiable"]]
-    k = data.kpis(f)
+    k = api.kpis(f)
     if sm.empty:
         prix = html.P("Pas assez de ventes de maisons avec ces filtres.")
     else:
@@ -250,18 +256,18 @@ def maj_reponses(store):
                 className="answer-detail",
             ),
             html.P(
-                f"Classement sur {len(sm)} communes ayant au moins {SEUIL_FIABILITE} ventes de maisons.",
+                f"Classement sur {len(sm)} communes ayant au moins {cfg.SEUIL_FIABILITE} ventes de maisons.",
                 className="answer-foot",
             ),
         ]
 
     # 3. Tendance
-    evo = data.evolution_globale(f)
+    evo = api.evolution_globale(f)
     em, ea = evo.get("Maison"), evo.get("Appartement")
     if not em:
         tendance = html.P("Pas assez de ventes sur les deux périodes.")
     else:
-        ec = data.evolution_communes(f, "Maison")
+        ec = api.evolution_communes(f, "Maison")
         ec = ec[ec["fiable"]]
         detail = []
         if ea:
@@ -277,7 +283,7 @@ def maj_reponses(store):
                 [
                     "Maisons : ",
                     html.Strong(fmt.pct(em["pm2_var"])),
-                    f" sur le prix médian au m² entre {AV} et {AP}.",
+                    f" sur le prix médian au m² entre {_av()} et {_ap()}.",
                 ],
                 className="answer-headline",
             ),
@@ -303,7 +309,7 @@ def maj_reponses(store):
 )
 def maj_carte(store, type_, scheme):
     f = Filtres.from_store(store)
-    stats = data.stats_communes(f, type_)
+    stats = api.stats_communes(f, type_)
     return carte_communes(
         stats,
         scheme,
@@ -325,7 +331,7 @@ def maj_carte(store, type_, scheme):
 )
 def maj_tendance(store, scheme):
     f = Filtres.from_store(store)
-    return tendance_trimestrielle(data.stats_trimestrielles(f), scheme)
+    return tendance_trimestrielle(api.stats_trimestrielles(f), scheme)
 
 
 @callback(

@@ -21,9 +21,10 @@ from dash import (
     no_update,
 )
 
+from immo.api import ApiError
 from immo.cache import CACHE_CONFIG, cache
 from immo.components import icon
-from immo.config import BORNES, FILTRES_DEFAUT
+from immo import config as cfg
 from theme import MANTINE_THEME
 
 app = Dash(
@@ -125,7 +126,7 @@ def header():
                                 {"value": "metropole", "label": "Métropole"},
                                 {"value": "loiret", "label": "Loiret"},
                             ],
-                            value=FILTRES_DEFAUT["zone"],
+                            value=cfg.FILTRES_DEFAUT["zone"],
                             size="xs",
                             radius="xl",
                             className="zone-control",
@@ -194,7 +195,7 @@ def _range(id_, label, bornes, step, marks):
 
 
 def filters_drawer():
-    a0, a1 = BORNES["annees"]
+    a0, a1 = cfg.BORNES["annees"]
     return dmc.Drawer(
         id="filters-drawer",
         title=dmc.Text("Filtres de données", fw=700, size="lg"),
@@ -214,14 +215,14 @@ def filters_drawer():
                 _range(
                     "filter-annees",
                     "Années de vente",
-                    BORNES["annees"],
+                    cfg.BORNES["annees"],
                     1,
                     [{"value": y, "label": str(y)} for y in range(a0, a1 + 1)],
                 ),
                 _range(
                     "filter-prix",
                     "Prix de vente",
-                    BORNES["prix"],
+                    cfg.BORNES["prix"],
                     10_000,
                     [
                         {"value": v, "label": l}
@@ -231,14 +232,14 @@ def filters_drawer():
                 _range(
                     "filter-surface",
                     "Surface habitable",
-                    BORNES["surface"],
+                    cfg.BORNES["surface"],
                     1,
                     [{"value": v, "label": f"{v}"} for v in (9, 100, 200, 300, 400)],
                 ),
                 _range(
                     "filter-prix-m2",
                     "Prix au m²",
-                    BORNES["prix_m2"],
+                    cfg.BORNES["prix_m2"],
                     50,
                     [
                         {"value": v, "label": f"{v // 1000} k" if v >= 1000 else str(v)}
@@ -281,29 +282,60 @@ def footer():
     )
 
 
-app.layout = dmc.MantineProvider(
-    id="mantine-provider",
-    theme=MANTINE_THEME,
-    forceColorScheme="light",
-    children=[
-        dcc.Store(id="color-scheme-store", storage_type="local", data="light"),
-        dcc.Store(id="filters-store", storage_type="session", data=FILTRES_DEFAUT),
-        dmc.AppShell(
-            header={"height": 68},
-            padding=0,
+def api_indisponible(erreur: Exception):
+    return dmc.MantineProvider(
+        theme=MANTINE_THEME,
+        children=dmc.Container(
+            size="sm",
+            py=80,
             children=[
-                header(),
-                filters_drawer(),
-                dmc.AppShellMain(
-                    [
-                        dmc.Container(dash.page_container, size="xl", className="page-container"),
-                        footer(),
-                    ]
+                dmc.Title("Les données se réveillent…", order=2),
+                dmc.Text(
+                    "L'API Immo Loiret ne répond pas encore (elle peut être en veille). "
+                    "Rechargez la page dans quelques secondes.",
+                    c="dimmed",
+                    mt="sm",
                 ),
+                dmc.Code(str(erreur), block=True, mt="lg"),
             ],
         ),
-    ],
-)
+    )
+
+
+def serve_layout():
+    """Construit à chaque chargement : les bornes des filtres viennent de l'API."""
+    try:
+        cfg.FILTRES_DEFAUT  # lit /meta (mis en cache) et vérifie que l'API répond
+    except ApiError as exc:
+        return api_indisponible(exc)
+    return dmc.MantineProvider(
+        id="mantine-provider",
+        theme=MANTINE_THEME,
+        forceColorScheme="light",
+        children=[
+            dcc.Store(id="color-scheme-store", storage_type="local", data="light"),
+            dcc.Store(id="filters-store", storage_type="session", data=cfg.FILTRES_DEFAUT),
+            dmc.AppShell(
+                header={"height": 68},
+                padding=0,
+                children=[
+                    header(),
+                    filters_drawer(),
+                    dmc.AppShellMain(
+                        [
+                            dmc.Container(
+                                dash.page_container, size="xl", className="page-container"
+                            ),
+                            footer(),
+                        ]
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+app.layout = serve_layout
 
 
 # --------------------------------------------------------------------------- #
@@ -375,13 +407,13 @@ def ouvrir_filtres(_):
     prevent_initial_call=True,
 )
 def maj_filtres(zone, _apply, _reset, annees, prix, surface, prix_m2, store):
-    store = {**FILTRES_DEFAUT, **(store or {})}
+    store = {**cfg.FILTRES_DEFAUT, **(store or {})}
     if ctx.triggered_id == "zone-control":
         if zone == store["zone"]:
             return no_update, no_update
         return {**store, "zone": zone}, no_update
     if ctx.triggered_id == "filters-reset":
-        return {**FILTRES_DEFAUT, "zone": store["zone"]}, False
+        return {**cfg.FILTRES_DEFAUT, "zone": store["zone"]}, False
     return {
         "zone": store["zone"],
         "annees": annees,
@@ -400,8 +432,10 @@ def maj_filtres(zone, _apply, _reset, annees, prix, surface, prix_m2, store):
     Input("filters-store", "data"),
 )
 def synchro_controles(store):
-    s = {**FILTRES_DEFAUT, **(store or {})}
-    personnalise = any(s[k] != FILTRES_DEFAUT[k] for k in ("annees", "prix", "surface", "prix_m2"))
+    s = {**cfg.FILTRES_DEFAUT, **(store or {})}
+    personnalise = any(
+        s[k] != cfg.FILTRES_DEFAUT[k] for k in ("annees", "prix", "surface", "prix_m2")
+    )
     return s["annees"], s["prix"], s["surface"], s["prix_m2"], not personnalise
 
 

@@ -5,12 +5,13 @@ from dataclasses import replace
 
 import dash
 import dash_mantine_components as dmc
+import pandas as pd
 from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import data, fmt
+from immo import api, fmt
 from immo.components import chart_card, empty_state, grid, icon, stat_tile
-from immo.config import SEUIL_FIABILITE, ZONES
-from immo.data import Filtres
+from immo import config as cfg
+from immo.api import Filtres
 from immo.figures import barres_sections, carte_ventes, figure_vide, tendance_annuelle_commune
 
 dash.register_page(
@@ -24,7 +25,7 @@ dash.register_page(
 
 def _nom_commune(code):
     try:
-        idx = data.communes_index()
+        idx = api.communes_index()
         m = idx.loc[idx["code_commune"] == code, "nom_commune"]
         return m.iloc[0] if len(m) else "Commune"
     except Exception:  # hors contexte serveur (enregistrement des pages)
@@ -63,7 +64,7 @@ COLONNES_VENTES = [
 
 
 def layout(code=None, **_):
-    idx = data.communes_index()
+    idx = api.communes_index()
     match = idx[idx["code_commune"] == code]
     if match.empty:
         return html.Div(
@@ -163,7 +164,7 @@ def layout(code=None, **_):
                                 ),
                                 dmc.Text(
                                     "Une section = un quartier de quelques rues. Le chiffre indique le nombre "
-                                    f"de ventes ; en gris, moins de {SEUIL_FIABILITE}. Cliquez pour filtrer.",
+                                    f"de ventes ; en gris, moins de {cfg.SEUIL_FIABILITE}. Cliquez pour filtrer.",
                                     className="chart-subtitle",
                                 ),
                                 html.Div(
@@ -241,7 +242,7 @@ def layout(code=None, **_):
             chart_card(
                 "Évolution du prix médian au m²",
                 "commune-trend",
-                subtitle=f"Point creux : moins de {SEUIL_FIABILITE} ventes cette année-là (valeur indicative).",
+                subtitle=f"Point creux : moins de {cfg.SEUIL_FIABILITE} ventes cette année-là (valeur indicative).",
                 height=300,
             ),
         ]
@@ -290,35 +291,32 @@ def _vue_carte(df):
 )
 def maj_kpis(store, code):
     f = Filtres.from_store(store)
-    df = data.ventes_commune(_filtres_commune(store), code)
-    zone = data.kpis(f)
+    r = api.resume_commune(_filtres_commune(store), code)
+    zone = api.kpis(f)
 
     def bloc(t):
-        d = df[df["type"] == t]
-        if d.empty:
+        d = r[t]
+        if not d["n"]:
             return "–", "Aucune vente"
-        n = len(d)
-        suffixe = "" if n >= SEUIL_FIABILITE else " · indicatif"
-        return fmt.eur_m2(d["prix_m2"].median()), f"sur {fmt.ventes(n)}{suffixe}"
+        suffixe = "" if d["fiable"] else " · indicatif"
+        return fmt.eur_m2(d["pm2_med"]), f"sur {fmt.ventes(d['n'])}{suffixe}"
 
     m_val, m_det = bloc("Maison")
     a_val, a_det = bloc("Appartement")
-    maisons = df[df["type"] == "Maison"]
-    prix = fmt.euros(maisons["valeur_fonciere"].median()) if len(maisons) else "–"
-    prix_det = (
-        f"pour {fmt.m2(maisons['surface_reelle_bati'].median())} (médiane)" if len(maisons) else ""
-    )
+    m = r["Maison"]
+    prix = fmt.euros(m["prix_med"]) if m["n"] else "–"
+    prix_det = f"pour {fmt.m2(m['surf_med'])} (médiane)" if m["n"] else ""
     ecart, ecart_det = "–", "Pas de vente de maison"
-    if len(maisons) and zone["Maison"]["pm2_med"]:
-        e = maisons["prix_m2"].median() / zone["Maison"]["pm2_med"] - 1
+    if m["n"] and zone["Maison"]["pm2_med"]:
+        e = m["pm2_med"] / zone["Maison"]["pm2_med"] - 1
         ecart = fmt.pct(e, decimales=0)
         ecart_det = (
             f"{'plus cher' if e > 0 else 'moins cher'} que la médiane de la zone "
-            f"{ZONES[f.zone]['label']} ({fmt.eur_m2(zone['Maison']['pm2_med'])})"
+            f"{cfg.ZONES[f.zone]['label']} ({fmt.eur_m2(zone['Maison']['pm2_med'])})"
         )
-    n_sections = df["section"].nunique()
+    n_sections = r["n_sections"]
     sous_titre = (
-        f"{fmt.ventes(len(df))} de {f.annee_min} à {f.annee_max}, réparties sur {n_sections} "
+        f"{fmt.ventes(r['n'])} de {f.annee_min} à {f.annee_max}, réparties sur {n_sections} "
         f"section{'s' if n_sections > 1 else ''} cadastrale{'s' if n_sections > 1 else ''}."
     )
     return sous_titre, m_val, m_det, a_val, a_det, prix, prix_det, ecart, ecart_det
@@ -335,7 +333,7 @@ def maj_kpis(store, code):
 )
 def maj_sections(store, code, type_, section, scheme):
     f = _filtres_commune(store)
-    df = data.stats_sections(f, code, _type(type_))
+    df = api.stats_sections(f, code, _type(type_))
     fig = barres_sections(df, scheme, section, _type(type_))
     hauteur = max(260, 26 * len(df) + 60)
     fig.update_layout(height=hauteur)
@@ -352,7 +350,7 @@ def maj_sections(store, code, type_, section, scheme):
 )
 def maj_points(store, code, type_, section, scheme):
     f = _filtres_commune(store)
-    df = data.ventes_commune(f, code)
+    _, df = api.ventes_commune(f, code, geo=True)
     center, zoom = _vue_carte(df[df["section"] == section] if section else df)
     if _type(type_):
         df = df[df["type"] == type_]
@@ -405,33 +403,24 @@ def maj_section_ui(section, nom):
 )
 def maj_ventes(store, code, type_, section):
     f = _filtres_commune(store)
-    df = data.ventes_commune(f, code)
-    if _type(type_):
-        df = df[df["type"] == type_]
-    if section:
-        df = df[df["section"] == section]
-    n_total = len(df)
-    tronque = not section and n_total > MAX_LIGNES
-    if tronque:
-        df = df.nlargest(MAX_LIGNES, "date_mutation")
+    n_total, df = api.ventes_commune(
+        f, code, type_=_type(type_), section=section, limit=None if section else MAX_LIGNES
+    )
+    tronque = n_total > len(df)
     rows = [
         {
             "id": r.id_mutation,
-            "date": r.date_mutation.strftime("%Y-%m-%d"),
+            "date": r.date,
             "type": r.type,
             "section": r.section,
             "prix": r.valeur_fonciere,
             "surface": r.surface_reelle_bati,
             "pieces": (
-                None
-                if math.isnan(r.nombre_pieces_principales)
-                else int(r.nombre_pieces_principales)
+                None if pd.isna(r.nombre_pieces_principales) else int(r.nombre_pieces_principales)
             ),
             "prix_m2": round(r.prix_m2),
             "terrain": (
-                None
-                if math.isnan(r.surface_terrain) or r.surface_terrain == 0
-                else r.surface_terrain
+                None if pd.isna(r.surface_terrain) or r.surface_terrain == 0 else r.surface_terrain
             ),
         }
         for r in df.itertuples()
@@ -439,7 +428,7 @@ def maj_ventes(store, code, type_, section):
     titre = f"{fmt.ventes(n_total)}" + (f" dans la section {section}" if section else "")
     if tronque:
         titre += (
-            f" · les {fmt.entier(MAX_LIGNES)} plus récentes (choisissez une section pour tout voir)"
+            f" · les {fmt.entier(len(df))} plus récentes (choisissez une section pour tout voir)"
         )
     return rows, titre
 
@@ -456,7 +445,7 @@ def detail_vente(selected, store, code):
         return empty_state("Sélectionnez une vente dans le tableau.")
     v = selected[0]
     f = _filtres_commune(store)
-    comp = data.comparables(f, code, v["type"], float(v["surface"]), v["id"])
+    comp = api.comparables_stats(f, code, v["type"], float(v["surface"]), v["id"])
     lignes = [
         dmc.Text(f"{v['type']} · {fmt.m2(v['surface'])} · section {v['section']}", fw=600),
         dmc.Text(
@@ -466,14 +455,13 @@ def detail_vente(selected, store, code):
         ),
         html.Div(fmt.eur_m2(v["prix_m2"]), className="stat-value"),
     ]
-    if len(comp) < 5:
+    if comp["n"] < 5:
         lignes.append(
-            empty_state(f"Seulement {len(comp)} vente(s) comparable(s) : comparaison impossible.")
+            empty_state(f"Seulement {comp['n']} vente(s) comparable(s) : comparaison impossible.")
         )
         return dmc.Stack(lignes, gap=4)
-    med = comp["prix_m2"].median()
+    med, q1, q3 = comp["pm2_med"], comp["pm2_q1"], comp["pm2_q3"]
     ecart = v["prix_m2"] / med - 1
-    q1, q3 = comp["prix_m2"].quantile([0.25, 0.75])
     if v["prix_m2"] > q3:
         verdict, couleur = "Plus cher que la plupart des ventes similaires", "red"
     elif v["prix_m2"] < q1:
@@ -493,7 +481,7 @@ def detail_vente(selected, store, code):
         dmc.Text(
             [
                 html.Strong(fmt.pct(ecart, decimales=0)),
-                f" par rapport à la médiane de {fmt.ventes(len(comp))} comparables ({fmt.eur_m2(med)}).",
+                f" par rapport à la médiane de {fmt.ventes(comp['n'])} comparables ({fmt.eur_m2(med)}).",
             ],
             size="sm",
             mt="sm",
@@ -521,15 +509,7 @@ def detail_vente(selected, store, code):
     Input("color-scheme-store", "data"),
 )
 def maj_tendance(store, code, scheme):
-    f = _filtres_commune(store)
-    df = data.ventes_commune(f, code)
+    df = api.annuel_commune(_filtres_commune(store), code)
     if df.empty:
         return figure_vide(scheme, "Aucune vente avec ces filtres")
-    g = (
-        df.groupby(["annee", "type"], observed=True)["prix_m2"]
-        .agg(["size", "median"])
-        .reset_index()
-    )
-    g = g.rename(columns={"size": "n", "median": "pm2_med"})
-    g["fiable"] = g["n"] >= SEUIL_FIABILITE
-    return tendance_annuelle_commune(g, scheme)
+    return tendance_annuelle_commune(df, scheme)

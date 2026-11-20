@@ -1,4 +1,4 @@
-"""Constantes métier partagées par toute l'application."""
+"""Constantes métier : source de vérité, exposées au frontend par /meta."""
 
 from pathlib import Path
 
@@ -38,14 +38,6 @@ FILTRES_DEFAUT = {
 }
 
 ZONES = {
-    "metropole": {
-        "label": "Orléans Métropole",
-        "center": {"lat": 47.895, "lon": 1.915},
-        "zoom": 9.4,
-    },
-    "loiret": {
-        "label": "Tout le Loiret",
-        "center": {"lat": 47.92, "lon": 2.18},
-        "zoom": 7.9,
-    },
+    "metropole": "Orléans Métropole",
+    "loiret": "Tout le Loiret",
 }

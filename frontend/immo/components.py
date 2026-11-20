@@ -5,7 +5,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 from dash_iconify import DashIconify
 
-from immo.config import SEUIL_FIABILITE, TYPES
+from immo import config as cfg
 from theme import GRAPH_CONFIG
 
 
@@ -103,7 +103,7 @@ def chart_card(title: str, graph_id: str, subtitle=None, controls=None, height=3
 
 
 def type_control(id_: str, value: str = "Maison", comparer: bool = False):
-    data = [{"value": t, "label": t} for t in TYPES]
+    data = [{"value": t, "label": t} for t in cfg.TYPES]
     if comparer:
         data.append({"value": "Comparer", "label": "Comparer"})
     return dmc.SegmentedControl(id=id_, value=value, data=data, size="xs", radius="xl")
@@ -192,7 +192,7 @@ def legende_fiabilite():
         className="legend-note",
         children=[
             html.Span(className="swatch swatch--indicatif"),
-            f"Moins de {SEUIL_FIABILITE} ventes : prix indicatif, non coloré",
+            f"Moins de {cfg.SEUIL_FIABILITE} ventes : prix indicatif, non coloré",
         ],
     )
 

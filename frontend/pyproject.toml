@@ -1,5 +1,5 @@
 [project]
-name = "immo-loiret"
+name = "immo-loiret-web"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,7 +11,7 @@ dependencies = [
     "gunicorn>=23",
     "pandas>=2.2,<3",
     "plotly>=6.3,<7",
-    "pyarrow>=18",
+    "requests>=2.32",
 ]
 
 [dependency-groups]
@@ -23,3 +23,6 @@ dev = [
 [tool.black]
 line-length = 100
 target-version = ["py312"]
+
+[tool.uv]
+package = false

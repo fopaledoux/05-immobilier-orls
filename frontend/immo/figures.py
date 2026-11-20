@@ -7,8 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from immo import fmt
-from immo.config import PERIODE_APRES, PERIODE_AVANT, SEUIL_FIABILITE, ZONES
-from immo.data import geojson_zone
+from immo import config as cfg
+from immo.api import geojson_zone
 from theme import COULEURS, couleur_type, echelle_divergente, echelle_sequentielle, template
 
 
@@ -43,7 +43,7 @@ def figure_vide(scheme: str, message: str) -> go.Figure:
 # Cartes
 # --------------------------------------------------------------------------- #
 def _map_layout(fig: go.Figure, scheme: str, zone: str, center=None, zoom=None):
-    z = ZONES.get(zone, ZONES["loiret"])
+    z = cfg.ZONES.get(zone, cfg.ZONES["loiret"])
     fig.update_layout(
         map=dict(
             style=COULEURS[scheme]["map_style"],
@@ -91,7 +91,7 @@ def carte_communes(
     def hover_text(row):
         lignes = [f"<b>{row['nom_commune']}</b>", *lignes_hover(row)]
         if not row[col_fiable]:
-            lignes.append(f"<i>Moins de {SEUIL_FIABILITE} ventes : indicatif</i>")
+            lignes.append(f"<i>Moins de {cfg.SEUIL_FIABILITE} ventes : indicatif</i>")
         lignes.append("<span style='font-size:11px'>Cliquer pour la fiche commune</span>")
         return "<br>".join(lignes)
 
@@ -317,7 +317,9 @@ def maison_vs_appart(df: pd.DataFrame, scheme: str, n_max: int = 15) -> go.Figur
     c = COULEURS[scheme]
     d = df[df["fiable_maison"] & df["fiable_appart"]].head(n_max)
     if d.empty:
-        return figure_vide(scheme, f"Aucune commune avec {SEUIL_FIABILITE} ventes de chaque type")
+        return figure_vide(
+            scheme, f"Aucune commune avec {cfg.SEUIL_FIABILITE} ventes de chaque type"
+        )
     d = d.sort_values("pm2_med_maison")
     fig = _base(scheme, hovermode="closest")
     for _, r in d.iterrows():
@@ -386,7 +388,7 @@ def barres_sections(
                     np.where(
                         df["fiable"],
                         "",
-                        f"<br><i>Moins de {SEUIL_FIABILITE} ventes : indicatif</i>",
+                        f"<br><i>Moins de {cfg.SEUIL_FIABILITE} ventes : indicatif</i>",
                     ),
                 ],
                 axis=-1,
@@ -416,7 +418,7 @@ def barres_evolution(df: pd.DataFrame, scheme: str, n: int = 8) -> go.Figure:
     d = df[df["fiable"]].sort_values("var")
     if d.empty:
         return figure_vide(
-            scheme, f"Aucune commune avec {SEUIL_FIABILITE} ventes sur chaque période"
+            scheme, f"Aucune commune avec {cfg.SEUIL_FIABILITE} ventes sur chaque période"
         )
     d = pd.concat([d.head(n), d.tail(n)]).drop_duplicates("code_commune")
     fig = _base(scheme, hovermode="closest", bargap=0.25)
@@ -444,8 +446,8 @@ def barres_evolution(df: pd.DataFrame, scheme: str, n: int = 8) -> go.Figure:
                 axis=-1,
             ),
             hovertemplate=(
-                f"<b>%{{y}}</b><br>{PERIODE_AVANT[0]}-{PERIODE_AVANT[1]} : %{{customdata[0]}} "
-                f"(%{{customdata[2]}} ventes)<br>{PERIODE_APRES[0]}-{PERIODE_APRES[1]} : %{{customdata[1]}} "
+                f"<b>%{{y}}</b><br>{cfg.PERIODE_AVANT[0]}-{cfg.PERIODE_AVANT[1]} : %{{customdata[0]}} "
+                f"(%{{customdata[2]}} ventes)<br>{cfg.PERIODE_APRES[0]}-{cfg.PERIODE_APRES[1]} : %{{customdata[1]}} "
                 "(%{customdata[3]} ventes)<extra></extra>"
             ),
         )

@@ -1,13 +1,39 @@
+# Blueprint Render : deux services web, un par dossier.
+# Render › New › Blueprint › ce dépôt. À la création, Render demande API_URL :
+# saisir l'URL publique du service API (ex. https://immo-loiret-api.onrender.com).
 services:
   - type: web
-    name: immo-loiret
+    name: immo-loiret-api
     runtime: python
     plan: free
+    rootDir: backend
     buildCommand: pip install uv && uv sync --frozen --no-dev
-    startCommand: .venv/bin/gunicorn app:server --workers 2 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT
-    healthCheckPath: /
+    startCommand: .venv/bin/uvicorn immo_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - backend/**
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+
+  - type: web
+    name: immo-loiret-web
+    runtime: python
+    plan: free
+    rootDir: frontend
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: .venv/bin/gunicorn app:server --workers 2 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: API_URL
+        sync: false
+      - key: API_TIMEOUT
+        value: "60"
       - key: DASH_DEBUG
         value: "0"
