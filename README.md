@@ -4,6 +4,17 @@ Tableau de bord qui aide un couple d'acheteurs à décider **dans quelle commune
 chercher, pour quel budget**. Il s'appuie sur les 46 022 ventes de logements réellement conclues dans le
 Loiret entre 2021 et 2025 (DVF, DGFiP).
 
+## En ligne
+
+| | Lien |
+|---|---|
+| **Dashboard** | https://immo-loiret-web.onrender.com |
+| **API** | https://immo-loiret-api.onrender.com |
+| **Documentation de l'API** (Swagger) | https://immo-loiret-api.onrender.com/docs |
+
+> Hébergé sur l'offre gratuite de Render : après 15 minutes sans visite, les services se mettent en
+> veille et la première ouverture peut prendre environ une minute.
+
 Dès l'ouverture, la page d'accueil répond à trois questions :
 
 | Question | Ce que montre l'appli |
@@ -93,7 +104,7 @@ Les contours des communes (`backend/data/communes_loiret.geojson`) sont dans le 
 | `immo-loiret-api` | `backend/` | `uvicorn immo_api.main:app` |
 | `immo-loiret-web` | `frontend/` | `gunicorn app:server` |
 
-À la création, Render demande la variable `API_URL` du frontend : saisir l'URL publique de l'API, par exemple `https://immo-loiret-api.onrender.com`. Chaque service n'est reconstruit que si son propre dossier change.
+À la création, Render demande la variable `API_URL` du frontend : saisir l'URL publique de l'API, ici `https://immo-loiret-api.onrender.com`. Chaque service n'est reconstruit que si son propre dossier change.
 
 Sur l'offre gratuite, l'API se met en veille après 15 minutes sans trafic. La première visite peut donc afficher « Les données se réveillent… » le temps du redémarrage, environ une minute.
 
