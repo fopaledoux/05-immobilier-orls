@@ -50,7 +50,8 @@ NAV = [
     ("Mon budget", "/budget", "tabler:wallet"),
     ("Communes", "/communes", "tabler:map-2"),
     ("Tendances", "/tendances", "tabler:chart-line"),
-    ("Méthodologie", "/methodologie", "tabler:info-circle"),
+    # « Méthodologie » n'est plus dans le menu : la page reste accessible
+    # depuis le lien du pied de page.
 ]
 
 
