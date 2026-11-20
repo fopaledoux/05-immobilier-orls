@@ -186,7 +186,8 @@ def layout(code=None, **_):
                         children=chart_card(
                             "Les ventes sur la carte",
                             "commune-points",
-                            subtitle="Couleur = prix au m². Cliquez sur un point pour sélectionner sa section.",
+                            subtitle="Couleur = prix au m². Cliquez sur un point pour sélectionner sa section. "
+                            "Les ventes de 2026, sans coordonnées, n'y figurent pas.",
                             height=480,
                         ),
                     ),
@@ -355,7 +356,10 @@ def maj_points(store, code, type_, section, scheme):
     if _type(type_):
         df = df[df["type"] == type_]
     if df.empty:
-        return figure_vide(scheme, "Aucune vente avec ces filtres")
+        message = "Aucune vente géolocalisée avec ces filtres"
+        if f.annee_max >= cfg.ANNEE_PARTIELLE["annee"]:
+            message += "<br>(les ventes de 2026 n'ont pas de coordonnées)"
+        return figure_vide(scheme, message)
     return carte_ventes(df, scheme, section, center, zoom)
 
 

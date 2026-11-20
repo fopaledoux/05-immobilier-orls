@@ -38,7 +38,7 @@ app = Dash(
         {
             "name": "description",
             "content": "Prix médians au m² des maisons et appartements du Loiret "
-            "(DVF 2021-2025) : où chercher avec son budget.",
+            "(DVF 2021 à juin 2026) : où chercher avec son budget.",
         },
     ],
 )
@@ -111,7 +111,7 @@ def header():
                         html.Div(
                             [
                                 html.Span("Immo Loiret", className="brand-name"),
-                                html.Span("Ventes DVF 2021-2025", className="brand-tag"),
+                                html.Span("Ventes DVF 2021 – juin 2026", className="brand-tag"),
                             ]
                         ),
                     ],

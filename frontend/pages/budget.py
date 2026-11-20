@@ -68,7 +68,7 @@ def layout(**_):
             page_header(
                 "Où chercher avec mon budget ?",
                 "Indiquez votre budget et le bien recherché : pour chaque commune, on regarde les ventes "
-                "comparables de 2021 à 2025 et la part d'entre elles qui tenait dans votre budget.",
+                "comparables de 2021 à juin 2026 et la part d'entre elles qui tenait dans votre budget.",
                 eyebrow="Mon budget",
             ),
             dmc.Paper(

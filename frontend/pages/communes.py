@@ -79,7 +79,7 @@ def layout(**_):
             dcc.Location(id="communes-nav", refresh="callback-nav"),
             page_header(
                 "Combien coûte le m², commune par commune ?",
-                "Prix médian au m² des ventes de 2021 à 2025. Les communes avec moins de "
+                "Prix médian au m² des ventes de 2021 à juin 2026. Les communes avec moins de "
                 f"{cfg.SEUIL_FIABILITE} ventes restent grises : leur prix n'est qu'indicatif.",
                 eyebrow="Communes",
                 extra=dmc.Select(

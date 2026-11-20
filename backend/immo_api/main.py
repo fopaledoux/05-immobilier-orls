@@ -1,4 +1,4 @@
-"""API Immo Loiret : prix médians des ventes DVF du Loiret (2021-2025).
+"""API Immo Loiret : prix médians des ventes DVF du Loiret (2021 - juin 2026).
 
 Lancer en local : `uv run uvicorn immo_api.main:app --reload --port 8000`
 Documentation interactive : http://localhost:8000/docs
@@ -18,6 +18,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from immo_api import data
 from immo_api.config import (
+    ANNEE_PARTIELLE,
     BORNES,
     FILTRES_DEFAUT,
     PERIODE_APRES,
@@ -33,7 +34,7 @@ app = FastAPI(
     title="Immo Loiret API",
     version="1.0.0",
     description=(
-        "Prix médians des ventes de logements dans le Loiret (DVF 2021-2025, DGFiP). "
+        "Prix médians des ventes de logements dans le Loiret (DVF 2021 - juin 2026, DGFiP). "
         f"Toutes les médianes sont accompagnées du nombre de ventes ; en dessous de "
         f"{SEUIL_FIABILITE} ventes, `fiable` vaut `false`."
     ),
@@ -124,7 +125,9 @@ def meta():
         "bornes": {k: list(v) for k, v in BORNES.items()},
         "filtres_defaut": FILTRES_DEFAUT,
         "zones": ZONES,
-        "source": "DGFiP, DVF (Etalab, géolocalisées), Licence Ouverte 2.0",
+        "annee_partielle": ANNEE_PARTIELLE,
+        "source": "DGFiP, DVF (2021-2025 : Etalab, géolocalisées ; 2026 S1 : DGFiP, brutes), "
+        "Licence Ouverte 2.0",
     }
 
 

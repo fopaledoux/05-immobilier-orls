@@ -1,8 +1,13 @@
 # Immo Loiret · où acheter autour d'Orléans, et à quel prix ?
 
 Tableau de bord qui aide un couple d'acheteurs à décider **dans quelle commune ou quel quartier
-chercher, pour quel budget**. Il s'appuie sur les 46 022 ventes de logements réellement conclues dans le
-Loiret entre 2021 et 2025 (DVF, DGFiP).
+chercher, pour quel budget**. Il s'appuie sur les 49 863 ventes de logements réellement conclues dans le
+Loiret de janvier 2021 à juin 2026 (DVF, DGFiP).
+
+| Période | Ventes | Source |
+|---|---|---|
+| 2021 – 2025 | 46 022 | DVF géolocalisées (Etalab) |
+| 1er semestre 2026 | 3 841 | DVF brutes (DGFiP, publiées en octobre 2026), sans coordonnées |
 
 ## En ligne
 
@@ -95,6 +100,19 @@ uv run pytest
 
 Les contours des communes (`backend/data/communes_loiret.geojson`) sont dans le dépôt. Pour les régénérer : `uv run python scripts/prepare_geo.py` depuis `backend/`.
 
+### Données 2026
+
+Pour 2026, Etalab ne publie pas encore la version géolocalisée. Le fichier `backend/data/immobilier_2026s1.parquet` vient donc des [DVF brutes de la DGFiP](https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres/) (`valeursfoncieres-2026-s1.txt.zip`, 32 Mo). Il est préparé avec les mêmes règles que le fichier d'origine : ventes d'un seul logement dans le Loiret, avec les mêmes bornes de prix, de surface et de prix au m².
+
+```bash
+cd backend
+uv run python scripts/prepare_dvf_2026s1.py chemin/vers/valeursfoncieres-2026-s1.txt.zip
+```
+
+Contrôle : 3 841 ventes, contre 3 874 au premier semestre 2025, et des prix médians au m² proches (maisons 1 806 €, contre 1 813 €).
+
+Ces ventes comptent dans toutes les statistiques. N'ayant pas de coordonnées, elles n'apparaissent pas sur la carte des ventes d'une commune. 2026 n'étant qu'un semestre, les graphiques annuels l'affichent « 2026 (janv.-juin) » en barre atténuée, et la comparaison avant/après la hausse des taux reste sur des années complètes (2021-22 contre 2024-25).
+
 ## Déploiement sur Render
 
 `render.yaml` décrit deux services web (Render › New › Blueprint › ce dépôt) :
@@ -116,8 +134,10 @@ backend/
     main.py            # routes FastAPI, validation des paramètres
     data.py            # chargement, filtres et agrégats mémoïsés
     config.py          # règles métier (seuil, frais, périodes, bornes)
-  data/                # ventes DVF (parquet) et contours des communes
-  scripts/prepare_geo.py
+  data/                # ventes DVF 2021-2025 et 2026 S1 (parquet), contours des communes
+  scripts/
+    prepare_geo.py         # contours des communes
+    prepare_dvf_2026s1.py  # ventes du 1er semestre 2026 (DVF brutes)
   tests/test_api.py
 frontend/
   app.py               # point d'entrée Dash (en-tête, filtres, thème) ; expose `server`
@@ -141,7 +161,7 @@ render.yaml            # déploiement des deux services
 
 ## Sources et licences
 
-- Ventes : **DGFiP, DVF** (demandes de valeurs foncières géolocalisées, Etalab), Licence Ouverte 2.0
+- Ventes : **DGFiP, DVF**, Licence Ouverte 2.0. Pour 2021-2025, la version géolocalisée d'Etalab ; pour le 1er semestre 2026, la version brute de la DGFiP.
 - Contours des communes : IGN Admin Express via [geo.api.gouv.fr](https://geo.api.gouv.fr), Licence Ouverte 2.0
 - Fonds de carte : © OpenStreetMap contributors, © CARTO
 

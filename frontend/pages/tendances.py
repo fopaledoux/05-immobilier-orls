@@ -28,7 +28,8 @@ def layout(**_):
             page_header(
                 "Les prix ont-ils baissé depuis la hausse des taux ?",
                 f"On compare {_av()} (avant la remontée des taux, été 2022) à {_ap()}. "
-                "Ces graphiques couvrent toujours les 5 années, quel que soit le filtre d'années.",
+                "Ces graphiques couvrent toutes les années, quel que soit le filtre d'années ; "
+                "2026 ne compte que le premier semestre.",
                 eyebrow="Tendances",
             ),
             dmc.SimpleGrid(

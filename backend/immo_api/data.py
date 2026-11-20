@@ -20,7 +20,7 @@ from immo_api.config import (
     METROPOLE_EPCI,
     PERIODE_APRES,
     PERIODE_AVANT,
-    SALES_FILE,
+    SALES_FILES,
     SEUIL_FIABILITE,
 )
 
@@ -62,7 +62,7 @@ class Filtres:
 # --------------------------------------------------------------------------- #
 @lru_cache(maxsize=1)
 def load_sales() -> pd.DataFrame:
-    df = pd.read_parquet(SALES_FILE, columns=COLONNES)
+    df = pd.concat([pd.read_parquet(f, columns=COLONNES) for f in SALES_FILES], ignore_index=True)
     df["type"] = df["type"].astype("category")
     return df
 

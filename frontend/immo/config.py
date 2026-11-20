@@ -38,6 +38,7 @@ _META = {
     "TYPES": lambda m: tuple(m["types"]),
     "BORNES": lambda m: {k: tuple(v) for k, v in m["bornes"].items()},
     "FILTRES_DEFAUT": lambda m: m["filtres_defaut"],
+    "ANNEE_PARTIELLE": lambda m: m["annee_partielle"],
 }
 
 

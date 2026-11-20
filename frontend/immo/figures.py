@@ -291,23 +291,36 @@ def tendance_trimestrielle(df: pd.DataFrame, scheme: str, mesure: str = "pm2_med
     return fig
 
 
+def libelle_annee(annee) -> str:
+    """« 2026 (janv.-juin) » pour l'année incomplète, sinon l'année seule."""
+    partielle = cfg.ANNEE_PARTIELLE
+    return partielle["label"] if int(annee) == partielle["annee"] else str(int(annee))
+
+
 def volumes_annuels(df: pd.DataFrame, scheme: str) -> go.Figure:
     c = COULEURS[scheme]
     fig = _base(scheme, barmode="group", bargroupgap=0.08)
+    partielle = cfg.ANNEE_PARTIELLE["annee"]
     for t in ("Maison", "Appartement"):
         d = df[df["type"] == t]
         fig.add_trace(
             go.Bar(
-                x=d["annee"].astype(str),
+                x=d["annee"].map(libelle_annee),
                 y=d["n"],
                 name=t,
-                marker=dict(color=couleur_type(t, scheme), cornerradius=4, line=dict(width=0)),
+                marker=dict(
+                    color=couleur_type(t, scheme),
+                    # année incomplète : barre atténuée, pour ne pas lire une chute des ventes
+                    opacity=[0.45 if a == partielle else 1 for a in d["annee"]],
+                    cornerradius=4,
+                    line=dict(width=0),
+                ),
                 customdata=d["n"].map(fmt.entier),
                 hovertemplate=f"{t} · %{{x}} : %{{customdata}} ventes<extra></extra>",
             )
         )
     fig.update_yaxes(title_text="Nombre de ventes")
-    fig.update_xaxes(showgrid=False)
+    fig.update_xaxes(showgrid=False, type="category")
     fig.update_layout(hovermode="closest")
     return fig
 
@@ -473,7 +486,7 @@ def tendance_annuelle_commune(df: pd.DataFrame, scheme: str) -> go.Figure:
             continue
         fig.add_trace(
             go.Scatter(
-                x=d["annee"].astype(str),
+                x=d["annee"].map(libelle_annee),
                 y=d["pm2_med"],
                 name=t,
                 mode="lines+markers",
@@ -489,6 +502,6 @@ def tendance_annuelle_commune(df: pd.DataFrame, scheme: str) -> go.Figure:
                 hovertemplate=f"{t} : %{{customdata[0]}} · %{{customdata[1]}}<extra></extra>",
             )
         )
-    fig.update_xaxes(showgrid=False)
+    fig.update_xaxes(showgrid=False, type="category")
     fig.update_yaxes(ticksuffix=" €")
     return fig

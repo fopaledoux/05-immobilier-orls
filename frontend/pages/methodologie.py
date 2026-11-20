@@ -50,9 +50,11 @@ def layout(**_):
                         "Source des données",
                         "tabler:database",
                         "**Demandes de valeurs foncières (DVF)** : toutes les ventes immobilières enregistrées "
-                        "par l'administration fiscale, republiées et géolocalisées par Etalab.\n\n"
-                        "Ici : les ventes d'**un seul logement** (maison ou appartement) dans le Loiret, "
-                        "du 02/01/2021 au 31/12/2025, soit 46 022 ventes dans 325 communes.\n\n"
+                        "par l'administration fiscale.\n\n"
+                        "Ici : les ventes d'**un seul logement** (maison ou appartement) dans le Loiret :\n\n"
+                        "- **2021 à 2025** : 46 022 ventes, version géolocalisée par Etalab ;\n"
+                        "- **1er semestre 2026** : 3 841 ventes, version brute publiée par la DGFiP en "
+                        "octobre 2026, préparée avec les mêmes règles (sans coordonnées).\n\n"
                         "Source : *DGFiP, DVF*, Licence Ouverte 2.0. Contours des communes : "
                         "IGN Admin Express via geo.api.gouv.fr.",
                     ),
@@ -104,8 +106,11 @@ def layout(**_):
                         "- **pas d'adresse** : la section cadastrale (quelques rues) est le niveau le plus fin\n"
                         "- le prix d'une maison **inclut le terrain**\n"
                         "- ce sont des prix **de vente**, pas des prix affichés en agence\n"
-                        "- 1 011 ventes n'ont pas de coordonnées : elles comptent dans les statistiques mais "
-                        "n'apparaissent pas sur la carte des ventes",
+                        "- 1 011 ventes de 2021-2025 et toutes celles de 2026 n'ont pas de coordonnées : "
+                        "elles comptent dans les statistiques mais n'apparaissent pas sur la carte des ventes\n"
+                        "- **2026 n'est qu'un semestre** : ses volumes ne sont pas comparables à une année "
+                        "pleine, et la comparaison avant/après la hausse des taux reste sur des années "
+                        "complètes",
                     ),
                 ],
             ),

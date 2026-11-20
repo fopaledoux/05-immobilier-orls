@@ -19,7 +19,8 @@ def test_health_et_meta():
     assert get("/health") == {"status": "ok"}
     m = get("/meta")
     assert m["seuil_fiabilite"] == 30
-    assert m["bornes"]["annees"] == [2021, 2025]
+    assert m["bornes"]["annees"] == [2021, 2026]
+    assert m["annee_partielle"]["annee"] == 2026
     assert set(m["zones"]) == {"metropole", "loiret"}
 
 
@@ -31,11 +32,27 @@ def test_communes_et_geo():
     assert len(get("/geo/communes", zone="loiret")["features"]) == 325
 
 
-def test_kpis_metropole_et_loiret():
-    k = get("/stats/kpis")
+def test_kpis_2021_2025_inchanges():
+    """Les chiffres de référence du fichier Etalab 2021-2025 restent identiques."""
+    k = get("/stats/kpis", annee_max=2025)
     assert k["n"] == 19_874 and k["n_communes"] == 22
     assert k["Maison"]["pm2_med"] == pytest.approx(2420, abs=1)
-    assert get("/stats/kpis", zone="loiret")["n"] == 46_022
+    assert get("/stats/kpis", zone="loiret", annee_max=2025)["n"] == 46_022
+
+
+def test_premier_semestre_2026():
+    k = get("/stats/kpis", zone="loiret", annee_min=2026)
+    assert k["n"] == 3_841
+    assert k["Maison"]["pm2_med"] == pytest.approx(1806, abs=1)
+    assert get("/stats/kpis", zone="loiret")["n"] == 46_022 + 3_841
+    annuel = get("/stats/annuelles", zone="loiret")
+    assert max(r["annee"] for r in annuel) == 2026
+    trim = get("/stats/trimestrielles", zone="loiret")
+    assert trim[-1]["label"] == "T2 2026"
+    # Ventes 2026 sans coordonnées : absentes de la carte, présentes dans le tableau
+    v = get(f"/communes/{ORLEANS}/ventes", annee_min=2026, limit=5)
+    assert v["total"] > 0 and v["ventes"][0]["latitude"] is None
+    assert get(f"/communes/{ORLEANS}/ventes", annee_min=2026, geo=True)["total"] == 0
 
 
 def test_filtres_annees_reduisent_les_ventes():
@@ -75,9 +92,9 @@ def test_budget_tri_fiables_en_premier():
 
 
 def test_fiche_commune():
-    r = get(f"/communes/{ORLEANS}/resume", zone="loiret")
+    r = get(f"/communes/{ORLEANS}/resume", zone="loiret", annee_max=2025)
     assert r["n"] == 9130 and r["n_sections"] == 82
-    v = get(f"/communes/{ORLEANS}/ventes", zone="loiret", limit=10)
+    v = get(f"/communes/{ORLEANS}/ventes", zone="loiret", annee_max=2025, limit=10)
     assert v["total"] == 9130 and len(v["ventes"]) == 10
     dates = [x["date"] for x in v["ventes"]]
     assert dates == sorted(dates, reverse=True)
