@@ -5,8 +5,10 @@ description = "API des prix médians de l'immobilier dans le Loiret (DVF 2021-20
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1",
+    "google-genai>=1.0",
     "pandas>=2.2,<3",
     "pyarrow>=18",
+    "python-dotenv>=1.0",
     "uvicorn[standard]>=0.32",
 ]
 

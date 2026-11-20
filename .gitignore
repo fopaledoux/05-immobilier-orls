@@ -12,3 +12,8 @@ __pycache__/
 # Système
 .DS_Store
 Thumbs.db
+
+# Secrets (clés API) : jamais dans Git
+.env
+.env.*
+!.env.example

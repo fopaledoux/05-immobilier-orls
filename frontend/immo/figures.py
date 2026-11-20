@@ -708,3 +708,43 @@ def carte_autour(df: pd.DataFrame, scheme: str, point: dict, rayon: float, label
         zoom=zoom,
     )
     return fig
+
+
+def distribution_prix(
+    valeurs: list[int], pm2_demande: float, pm2_med: float, scheme: str
+) -> go.Figure:
+    """Histogramme du €/m² des ventes comparables, avec le prix demandé et la médiane."""
+    c = COULEURS[scheme]
+    fig = _base(scheme, hovermode="closest", bargap=0.06)
+    fig.add_trace(
+        go.Histogram(
+            x=valeurs,
+            nbinsx=min(40, max(10, len(valeurs) // 8)),
+            marker=dict(color=c["maison"], line=dict(width=0)),
+            opacity=0.75,
+            hovertemplate="%{x} €/m² : %{y} ventes<extra></extra>",
+        )
+    )
+    for x, texte, couleur, tirets in (
+        (pm2_med, f"Médiane {fmt.eur_m2(pm2_med)}", c["ink_2"], "dash"),
+        (pm2_demande, f"Ce bien {fmt.eur_m2(pm2_demande)}", c["appartement"], "solid"),
+    ):
+        fig.add_vline(x=x, line=dict(color=couleur, width=2.5, dash=tirets))
+        fig.add_annotation(
+            x=x,
+            y=1,
+            yref="paper",
+            text=texte,
+            showarrow=False,
+            xanchor="left",
+            xshift=4,
+            yshift=-2 if couleur == c["ink_2"] else -20,
+            font=dict(size=12, color=c["ink"]),
+            bgcolor=c["surface"],
+        )
+    fig.update_xaxes(
+        title_text="Prix au m² des ventes comparables", ticksuffix=" €", showgrid=False
+    )
+    fig.update_yaxes(title_text="Nombre de ventes")
+    fig.update_layout(showlegend=False, margin=dict(l=8, r=8, t=16, b=8))
+    return fig

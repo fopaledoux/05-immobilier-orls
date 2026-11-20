@@ -236,3 +236,56 @@ def adresses(q: str, commune: str | None = None) -> list[dict]:
 
 def autour(f: Filtres, code: str, point: dict, rayon: int) -> dict:
     return get(f"/communes/{code}/autour", f, **_autour(point, rayon))
+
+
+# --------------------------------------------------------------------------- #
+# Assistant (LLM) : jamais mis en cache, chaque demande est envoyée
+# --------------------------------------------------------------------------- #
+LLM_TIMEOUT = 75  # secondes : un appel avec outils peut en enchaîner plusieurs
+
+
+def post(path: str, corps: dict, f: Filtres | None = None) -> dict:
+    url = f"{cfg.API_URL}{path}"
+    try:
+        r = requests.post(url, json=corps, params=f.params() if f else None, timeout=LLM_TIMEOUT)
+    except requests.RequestException as exc:
+        raise ApiError(f"API injoignable ({url}) : {exc}") from exc
+    if r.status_code >= 400:
+        raise ApiError(f"API {r.status_code} sur {path} : {r.text[:300]}")
+    return r.json()
+
+
+def assistant_statut() -> dict:
+    return get("/assistant/statut")
+
+
+def evaluer(f: Filtres, code: str, type_: str, surface: float, prix: float) -> dict:
+    return get(f"/communes/{code}/evaluer", f, type=type_, surface=surface, prix=prix)
+
+
+def expliquer_prix(
+    f: Filtres, code: str, type_: str, surface: float, prix: float, origine: str
+) -> dict:
+    corps = {
+        "code_commune": code,
+        "type": type_,
+        "surface": surface,
+        "prix": prix,
+        "origine": origine,
+    }
+    return post("/assistant/expliquer-prix", corps, f)
+
+
+def conseil_budget(f: Filtres, budget: float, frais: bool, type_: str, surface: float, pieces: int):
+    corps = {
+        "budget_total": budget,
+        "frais_inclus": frais,
+        "type": type_,
+        "surface_min": surface,
+        "pieces_min": pieces,
+    }
+    return post("/assistant/conseil-budget", corps, f)
+
+
+def chat(f: Filtres, messages: list[dict], contexte: str) -> dict:
+    return post("/assistant/chat", {"messages": messages, "contexte": contexte}, f)

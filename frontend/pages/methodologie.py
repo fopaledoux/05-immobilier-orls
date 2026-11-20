@@ -99,6 +99,17 @@ def layout(**_):
                         "La variation des volumes compare le nombre moyen de ventes **par an**.",
                     ),
                     _bloc(
+                        "L'assistant",
+                        "tabler:sparkles",
+                        "L'assistant (Google Gemini) **ne calcule rien** : il explique en français "
+                        "les chiffres calculés par l'appli (médianes, écarts, nombre de ventes) et "
+                        "doit citer le nombre de ventes de chaque chiffre. En discussion, il interroge "
+                        "les mêmes données que le tableau de bord.\n\n"
+                        "Ses réponses restent à vérifier, et elles ne remplacent ni une visite ni "
+                        "l'avis d'un professionnel. Le nombre de demandes est limité par session ; "
+                        "si l'assistant ne répond pas, les chiffres restent affichés.",
+                    ),
+                    _bloc(
                         "Autour d'une adresse",
                         "tabler:map-pin-search",
                         "DVF ne publie pas l'adresse des biens vendus. Quand vous cherchez une adresse, "

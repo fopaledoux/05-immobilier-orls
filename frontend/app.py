@@ -21,6 +21,7 @@ from dash import (
     no_update,
 )
 
+from immo import api, assistant  # assistant : enregistre les callbacks de la bulle
 from immo.api import ApiError
 from immo.cache import CACHE_CONFIG, cache
 from immo.components import icon
@@ -50,6 +51,7 @@ NAV = [
     ("Mon budget", "/budget", "tabler:wallet"),
     ("Communes", "/communes", "tabler:map-2"),
     ("Tendances", "/tendances", "tabler:chart-line"),
+    ("Évaluer un prix", "/evaluer", "tabler:scale"),
     # « Méthodologie » n'est plus dans le menu : la page reste accessible
     # depuis le lien du pied de page.
 ]
@@ -303,6 +305,14 @@ def api_indisponible(erreur: Exception):
     )
 
 
+def _assistant_actif() -> bool:
+    """La bulle n'apparaît que si le backend a une clé Gemini configurée."""
+    try:
+        return bool(api.assistant_statut().get("actif"))
+    except ApiError:
+        return False
+
+
 def serve_layout():
     """Construit à chaque chargement : les bornes des filtres viennent de l'API."""
     try:
@@ -318,6 +328,9 @@ def serve_layout():
             dcc.Store(id="filters-store", storage_type="session", data=cfg.FILTRES_DEFAUT),
             # Dernière adresse cherchée (en mémoire seulement, jamais dans l'URL)
             dcc.Store(id="adresse-recherchee", storage_type="memory"),
+            # Nombre de demandes à l'assistant pendant la session (limite par visiteur)
+            dcc.Store(id="llm-usage", storage_type="session", data=0),
+            assistant.bulle() if _assistant_actif() else None,
             dmc.AppShell(
                 header={"height": 68},
                 padding=0,

@@ -444,3 +444,48 @@ def autour_adresse(f: Filtres, code_commune: str, lat: float, lon: float, rayon:
         "quartier": quartier_de(code_commune, lat, lon),
         **_par_type(df),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Évaluer un prix demandé
+# --------------------------------------------------------------------------- #
+MIN_COMPARABLES = 5
+
+
+@lru_cache(maxsize=512)
+def evaluer_prix(f: Filtres, code_commune: str, type_: str, surface: float, prix: float) -> dict:
+    """Situe un prix (annonce ou vente) parmi les ventes comparables de la commune.
+
+    Comparables = même commune, même type, surface à ±20 %.
+    """
+    comp = comparables(f, code_commune, type_, surface, "")
+    pm2 = prix / surface
+    res = {
+        "code_commune": code_commune,
+        "type": type_,
+        "surface": surface,
+        "prix": prix,
+        "pm2": pm2,
+        "n": len(comp),
+        "surf_min": surface * 0.8,
+        "surf_max": surface * 1.2,
+        "fiable": len(comp) >= SEUIL_FIABILITE,
+        "evaluable": len(comp) >= MIN_COMPARABLES,
+    }
+    if not res["evaluable"]:
+        return res
+    valeurs = comp["prix_m2"]
+    q1, med, q3 = valeurs.quantile([0.25, 0.5, 0.75])
+    res.update(
+        pm2_med=med,
+        pm2_q1=q1,
+        pm2_q3=q3,
+        prix_med=comp["valeur_fonciere"].median(),
+        prix_equivalent=med * surface,
+        ecart=pm2 / med - 1,
+        # part des ventes comparables vendues moins cher au m²
+        rang=float((valeurs < pm2).mean()),
+        position="au-dessus" if pm2 > q3 else ("en dessous" if pm2 < q1 else "dans la norme"),
+        valeurs=sorted(int(round(v)) for v in valeurs),
+    )
+    return res

@@ -9,16 +9,23 @@ from __future__ import annotations
 import json
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path as Chemin
 from typing import Annotated, Literal
 
 import pandas as pd
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel
+from pydantic import Field as PydField
 
-from immo_api import data
-from immo_api.config import (
+# Clé API et réglages locaux (backend/.env, ignoré par Git) ; en ligne : variables Render
+load_dotenv(Chemin(__file__).resolve().parents[1] / ".env")
+
+from immo_api import data, llm  # noqa: E402
+from immo_api.config import (  # noqa: E402
     ANNEE_PARTIELLE,
     BORNES,
     FILTRES_DEFAUT,
@@ -29,8 +36,10 @@ from immo_api.config import (
     TYPES,
     ZONES,
 )
-from immo_api.data import Filtres
-from immo_api.geo import GeocodageIndisponible, geocoder
+from immo_api.data import Filtres  # noqa: E402
+from immo_api.outils import outils as outils_llm  # noqa: E402
+from immo_api.outils import resume_evaluation  # noqa: E402
+from immo_api.geo import GeocodageIndisponible, geocoder  # noqa: E402
 
 app = FastAPI(
     title="Immo Loiret API",
@@ -45,7 +54,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -358,3 +367,143 @@ def comparables(
     exclure: Annotated[str, Query(description="id_mutation à exclure")] = "",
 ):
     return propre(data.comparables_stats(f, commune_connue(code), type, surface, exclure))
+
+
+# --------------------------------------------------------------------------- #
+# Évaluer un prix (sans LLM)
+# --------------------------------------------------------------------------- #
+@app.get(
+    "/communes/{code}/evaluer",
+    tags=["assistant"],
+    summary="Situer un prix demandé parmi les ventes comparables",
+)
+def evaluer(
+    f: FiltresDep,
+    code: CodeCommune,
+    type: TypeBien,
+    surface: Annotated[float, Query(gt=8, le=1000)],
+    prix: Annotated[float, Query(gt=1000, le=10_000_000)],
+):
+    return propre(data.evaluer_prix(f, commune_connue(code), type, surface, prix))
+
+
+# --------------------------------------------------------------------------- #
+# Assistant (LLM Gemini) : il explique des chiffres calculés ici
+# --------------------------------------------------------------------------- #
+class DemandePrix(BaseModel):
+    code_commune: str = PydField(pattern=r"^\d[\dAB]\d{3}$")
+    type: TypeBien
+    surface: float = PydField(gt=8, le=1000)
+    prix: float = PydField(gt=1000, le=10_000_000)
+    origine: Literal["vente", "annonce"] = "annonce"
+
+
+class DemandeBudget(BaseModel):
+    budget_total: float = PydField(gt=1000, le=10_000_000)
+    frais_inclus: bool = True
+    type: TypeBien = "Maison"
+    surface_min: float = PydField(default=0, ge=0, le=1000)
+    pieces_min: int = PydField(default=0, ge=0, le=20)
+
+
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = PydField(min_length=1, max_length=2000)
+
+
+class DemandeChat(BaseModel):
+    messages: list[Message] = PydField(min_length=1, max_length=20)
+    contexte: str = PydField(default="", max_length=1000)
+
+
+def _texte_ou_repli(fonction, *args) -> dict:
+    """{texte, erreur} : en cas d'échec du LLM, texte = None et erreur expliquée."""
+    try:
+        return {"texte": fonction(*args), "erreur": None}
+    except llm.LLMIndisponible as exc:
+        return {"texte": None, "erreur": str(exc)}
+
+
+@app.get("/assistant/statut", tags=["assistant"], summary="L'assistant est-il configuré ?")
+def assistant_statut():
+    return {"actif": llm.actif(), "modele": llm.modele()}
+
+
+@app.post(
+    "/assistant/expliquer-prix",
+    tags=["assistant"],
+    summary="Expliquer un prix (vente ou annonce) au regard des ventes comparables",
+)
+def expliquer_prix(f: FiltresDep, demande: DemandePrix):
+    code = commune_connue(demande.code_commune)
+    e = data.evaluer_prix(
+        replace(f, zone="loiret"), code, demande.type, demande.surface, demande.prix
+    )
+    chiffres = resume_evaluation(e)
+    chiffres["commune"] = data.communes_index().set_index("code_commune").loc[code, "nom_commune"]
+    quoi = "Cette vente a été conclue" if demande.origine == "vente" else "Ce bien est proposé"
+    consigne = (
+        f"{quoi} au prix indiqué. En 3 à 5 phrases, dites à un couple d'acheteurs si ce prix est "
+        "cohérent avec les ventes comparables : écart à la médiane, place parmi les comparables, "
+        "fiabilité (nombre de ventes). Si la comparaison n'est pas possible, expliquez pourquoi. "
+        "Terminez par une piste concrète (marge de négociation, points à vérifier sur le bien)."
+    )
+    return {
+        "chiffres": propre(chiffres),
+        **_texte_ou_repli(llm.rediger, consigne, propre(chiffres)),
+    }
+
+
+@app.post(
+    "/assistant/conseil-budget",
+    tags=["assistant"],
+    summary="Commentaire personnalisé sur les communes accessibles pour un budget",
+)
+def conseil_budget(f: FiltresDep, demande: DemandeBudget):
+    outil = {o.__name__: o for o in outils_llm(f)}["communes_pour_budget"]
+    chiffres = outil(
+        demande.budget_total,
+        demande.type,
+        demande.surface_min,
+        demande.pieces_min,
+        demande.frais_inclus,
+        f.zone,
+    )
+    chiffres["projet"] = {
+        "budget_total": demande.budget_total,
+        "frais_de_notaire_inclus": demande.frais_inclus,
+        "type": demande.type,
+        "surface_min": demande.surface_min,
+        "pieces_min": demande.pieces_min,
+    }
+    consigne = (
+        "En 4 à 6 phrases, conseillez ce couple : où chercher en priorité (communes dans le budget "
+        "où il y a le plus de choix), et, s'il y en a peu ou aucune, quels compromis envisager "
+        "(surface, type de bien, élargir la zone) en vous appuyant uniquement sur les chiffres."
+    )
+    return {
+        "chiffres": propre(chiffres),
+        **_texte_ou_repli(llm.rediger, consigne, propre(chiffres)),
+    }
+
+
+@app.post(
+    "/assistant/chat",
+    tags=["assistant"],
+    summary="Discuter avec l'assistant (il interroge les données via des outils)",
+)
+def chat(f: FiltresDep, demande: DemandeChat):
+    if demande.messages[-1].role != "user":
+        raise HTTPException(422, "Le dernier message doit venir de l'utilisateur.")
+    contexte = (
+        f"{demande.contexte}\nFiltres actifs : zone {ZONES[f.zone]}, années {f.annee_min}-"
+        f"{f.annee_max}. Les communes se désignent par leur code INSEE : utilisez "
+        "chercher_commune pour le trouver."
+    )
+    try:
+        texte, appels = llm.discuter(
+            [m.model_dump() for m in demande.messages], contexte, outils_llm(f)
+        )
+        return {"reponse": texte, "outils": appels, "erreur": None}
+    except llm.LLMIndisponible as exc:
+        return {"reponse": None, "outils": [], "erreur": str(exc)}

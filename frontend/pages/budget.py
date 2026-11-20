@@ -2,9 +2,9 @@
 
 import dash
 import dash_mantine_components as dmc
-from dash import Input, Output, callback, dcc, html, no_update
+from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import api, fmt
+from immo import api, assistant, fmt
 from immo.components import chart_card, grid, icon, legende_fiabilite, page_header
 from immo import config as cfg
 from immo.api import Filtres
@@ -154,6 +154,21 @@ def layout(**_):
             ),
             dcc.Loading(
                 html.Div(id="budget-verdict", className="section"), type="dot", delay_show=300
+            ),
+            html.Div(
+                className="section",
+                children=[
+                    dmc.Button(
+                        "Demander conseil à l'assistant",
+                        id="budget-conseil",
+                        variant="light",
+                        leftSection=icon("tabler:sparkles", 16),
+                        style={} if _assistant_actif() else {"display": "none"},
+                    ),
+                    dcc.Loading(
+                        html.Div(id="budget-conseil-texte", className="section"), type="dot"
+                    ),
+                ],
             ),
             dmc.Grid(
                 gutter="md",
@@ -329,3 +344,52 @@ def ouvrir_commune(click, cell):
     if trig == "budget-grid" and cell and cell.get("colId") == "nom_commune":
         return f"/commune/{cell.get('rowId')}"
     return no_update
+
+
+def _assistant_actif() -> bool:
+    try:
+        return bool(api.assistant_statut().get("actif"))
+    except api.ApiError:
+        return False
+
+
+@callback(
+    Output("budget-conseil-texte", "children"),
+    Input("filters-store", "data"),
+    Input("budget-montant", "value"),
+    Input("budget-frais", "checked"),
+    Input("budget-type", "value"),
+    Input("budget-surface", "value"),
+    Input("budget-pieces", "value"),
+)
+def effacer_conseil(*_):
+    """Le conseil correspond à un projet : on l'efface quand le projet change."""
+    return None
+
+
+@callback(
+    Output("budget-conseil-texte", "children", allow_duplicate=True),
+    Output("llm-usage", "data", allow_duplicate=True),
+    Input("budget-conseil", "n_clicks"),
+    State("filters-store", "data"),
+    State("budget-montant", "value"),
+    State("budget-frais", "checked"),
+    State("budget-type", "value"),
+    State("budget-surface", "value"),
+    State("budget-pieces", "value"),
+    State("llm-usage", "data"),
+    prevent_initial_call=True,
+)
+def conseiller(_clic, store, montant, frais, type_, surface, pieces, usage):
+    if not _clic or not montant:  # n_clicks vaut 0 au montage du bouton : pas un clic
+        return no_update, no_update
+    return assistant.appeler(
+        usage,
+        api.conseil_budget,
+        Filtres.from_store(store),
+        float(montant),
+        bool(frais),
+        type_,
+        float(surface or 0),
+        int(pieces or 0),
+    )

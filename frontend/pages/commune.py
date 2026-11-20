@@ -7,7 +7,7 @@ import dash_mantine_components as dmc
 import pandas as pd
 from dash import Input, Output, State, callback, dcc, html, no_update
 
-from immo import adresse, api, fmt
+from immo import adresse, api, assistant, fmt
 from immo import config as cfg
 from immo.api import Filtres
 from immo.components import chart_card, empty_state, grid, icon, stat_tile
@@ -274,6 +274,19 @@ def layout(code=None, **_):
                                 html.Div(
                                     id="commune-vente-detail",
                                     children=empty_state("Sélectionnez une vente dans le tableau."),
+                                ),
+                                dmc.Button(
+                                    "Expliquer ce prix",
+                                    id="commune-expliquer",
+                                    variant="light",
+                                    size="xs",
+                                    mt="md",
+                                    leftSection=icon("tabler:sparkles", 14),
+                                    style={"display": "none"},
+                                ),
+                                dcc.Loading(
+                                    html.Div(id="commune-explication", className="explication"),
+                                    type="dot",
                                 ),
                             ],
                         ),
@@ -724,3 +737,43 @@ def maj_tendance(store, code, scheme):
     if df.empty:
         return figure_vide(scheme, "Aucune vente avec ces filtres")
     return tendance_annuelle_commune(df, scheme)
+
+
+@callback(
+    Output("commune-expliquer", "style"),
+    Output("commune-explication", "children"),
+    Input("commune-ventes", "selectedRows"),
+)
+def preparer_explication(selected):
+    """Le bouton n'apparaît qu'avec une vente sélectionnée et si l'assistant est actif."""
+    try:
+        actif = api.assistant_statut().get("actif")
+    except api.ApiError:
+        actif = False
+    return ({} if selected and actif else {"display": "none"}), None
+
+
+@callback(
+    Output("commune-explication", "children", allow_duplicate=True),
+    Output("llm-usage", "data", allow_duplicate=True),
+    Input("commune-expliquer", "n_clicks"),
+    State("commune-ventes", "selectedRows"),
+    State("filters-store", "data"),
+    State("commune-code", "data"),
+    State("llm-usage", "data"),
+    prevent_initial_call=True,
+)
+def expliquer_vente(_clic, selected, store, code, usage):
+    if not _clic or not selected:  # n_clicks vaut 0 au montage du bouton : pas un clic
+        return no_update, no_update
+    v = selected[0]
+    return assistant.appeler(
+        usage,
+        api.expliquer_prix,
+        _filtres_commune(store),
+        code,
+        v["type"],
+        float(v["surface"]),
+        float(v["prix"]),
+        "vente",
+    )

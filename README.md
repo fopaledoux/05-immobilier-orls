@@ -65,6 +65,22 @@ Principaux endpoints (tous en `GET`, filtres en paramètres : `zone`, `annee_min
 
 Sur toutes les pages, on peut basculer entre **Orléans Métropole** (vue par défaut) et **tout le Loiret**, ajuster les **filtres de données** et passer en **thème sombre**.
 
+## Assistant (LLM Gemini)
+
+L'appli intègre un assistant basé sur **Google Gemini** (offre gratuite), appelé uniquement par le backend, qui seul détient la clé.
+
+| Fonction | Où | Ce que fait l'assistant |
+|---|---|---|
+| **Expliquer un prix** | page « Évaluer un prix » (annonce saisie) et vente sélectionnée d'une fiche commune | Explique l'écart avec les ventes comparables (même commune, même type, surface ±20 %) et propose une piste concrète |
+| **Conseil budget** | page « Mon budget » | Indique où chercher en priorité et quels compromis envisager |
+| **Discussion** | bulle en bas à droite de toutes les pages | Répond aux questions sur les prix, communes, quartiers, tendances et budget |
+
+**Règle de fond : le LLM ne calcule rien.** L'API calcule les médianes, écarts et nombres de ventes ; Gemini ne fait que les expliquer. Pour la discussion, il dispose de quelques **outils** limités à nos données (`chercher_commune`, `prix_commune`, `prix_par_quartier`, `communes_pour_budget`, `classement_communes`, `evolution_des_prix`, `evolution_commune`, `evaluer_un_prix`) et doit citer le nombre de ventes qui fonde chaque chiffre.
+
+**Garde-fous** : 20 demandes à l'assistant par visiteur et par session ; plafond global de requêtes par heure côté API (`LLM_QUOTA_HEURE`) pour préserver le quota gratuit ; délai maximal par appel ; **repli sans LLM** si Gemini ne répond pas (pas de clé, quota, panne) : les chiffres restent affichés, seul le texte manque. Sans clé configurée, la bulle et les boutons de l'assistant n'apparaissent pas.
+
+> Sur l'offre gratuite de Gemini, Google peut utiliser les échanges pour améliorer ses produits : ne saisissez pas d'informations personnelles dans le chat.
+
 ## Choix de méthode
 
 - **Médianes, pas moyennes** : quelques ventes très chères ne déforment pas les prix.
@@ -90,6 +106,8 @@ cd frontend
 uv sync
 uv run python app.py
 ```
+
+Pour activer l'assistant en local, copiez `backend/.env.example` en `backend/.env` (ignoré par Git) et renseignez `GEMINI_API_KEY` ([clé gratuite sur AI Studio](https://aistudio.google.com/apikey)).
 
 Le frontend cherche l'API à l'adresse donnée par `API_URL` (par défaut `http://localhost:8000`). Si l'API tourne sur un autre port, par exemple `API_URL=http://localhost:8010`, il suffit de définir cette variable.
 
@@ -146,6 +164,8 @@ Ces ventes comptent dans toutes les statistiques. N'ayant pas de coordonnées, e
 
 À la création, Render demande la variable `API_URL` du frontend : saisir l'URL publique de l'API, ici `https://immo-loiret-api.onrender.com`. Chaque service n'est reconstruit que si son propre dossier change.
 
+Pour l'assistant, ajoutez la variable `GEMINI_API_KEY` au service `immo-loiret-api` (Render › service › Environment). La clé ne doit jamais être écrite dans le dépôt.
+
 Sur l'offre gratuite, l'API se met en veille après 15 minutes sans trafic. La première visite peut donc afficher « Les données se réveillent… » le temps du redémarrage, environ une minute.
 
 ## Structure
@@ -178,7 +198,7 @@ render.yaml            # déploiement des deux services
 
 ## Stack
 
-**Backend** : FastAPI · pandas · pyarrow · uvicorn
+**Backend** : FastAPI · pandas · pyarrow · uvicorn · google-genai (Gemini)
 **Frontend** : Dash 3 · Dash Mantine Components · Dash AG Grid · Plotly · flask-caching · requests
 **Outillage** : uv · pytest · black
 
