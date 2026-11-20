@@ -6,16 +6,18 @@ Documentation interactive : http://localhost:8000/docs
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import os
+import secrets
 from dataclasses import dataclass, replace
 from pathlib import Path as Chemin
 from typing import Annotated, Literal
 
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -24,7 +26,7 @@ from pydantic import Field as PydField
 # Clé API et réglages locaux (backend/.env, ignoré par Git) ; en ligne : variables Render
 load_dotenv(Chemin(__file__).resolve().parents[1] / ".env")
 
-from immo_api import data, llm  # noqa: E402
+from immo_api import data, llm, quota  # noqa: E402
 from immo_api.config import (  # noqa: E402
     ANNEE_PARTIELLE,
     BORNES,
@@ -416,12 +418,74 @@ class DemandeChat(BaseModel):
     contexte: str = PydField(default="", max_length=1000)
 
 
-def _texte_ou_repli(fonction, *args) -> dict:
-    """{texte, erreur} : en cas d'échec du LLM, texte = None et erreur expliquée."""
+# --------------------------------------------------------------------------- #
+# Accès et quota de l'assistant
+# --------------------------------------------------------------------------- #
+def visiteur(
+    request: Request,
+    x_immo_cle: Annotated[str | None, Header()] = None,
+    x_visiteur_ip: Annotated[str | None, Header()] = None,
+) -> str:
+    """Empreinte du visiteur, pour compter ses demandes quel que soit l'onglet ou le navigateur.
+
+    En production (ASSISTANT_TOKEN défini), seul le tableau de bord peut appeler l'assistant :
+    il s'authentifie par ce jeton partagé et transmet l'IP de son visiteur (X-Visiteur-IP).
+    Sans jeton valide : 401. Ainsi, impossible d'appeler l'API directement pour contourner
+    le quota, ni de choisir son IP. En local (pas de jeton), l'IP transmise ou celle de
+    l'appelant est utilisée.
+    """
+    attendu = os.environ.get("ASSISTANT_TOKEN")
+    if attendu:
+        if not x_immo_cle or not secrets.compare_digest(x_immo_cle, attendu):
+            raise HTTPException(401, "Accès à l'assistant réservé au tableau de bord.")
+        brute = x_visiteur_ip
+    else:
+        brute = x_visiteur_ip or (request.client.host if request.client else None)
     try:
-        return {"texte": fonction(*args), "erreur": None}
+        ip = str(ipaddress.ip_address((brute or "").strip()))
+    except ValueError:
+        raise HTTPException(400, "Adresse du visiteur absente ou invalide.") from None
+    return quota.empreinte(ip)
+
+
+VisiteurDep = Annotated[str, Depends(visiteur)]
+
+
+def _avec_quota(qui: str, appel) -> dict:
+    """Réserve une demande, appelle le LLM, rend la demande s'il échoue.
+
+    Quota épuisé : 429 avec l'heure de la prochaine demande disponible.
+    `appel()` renvoie un dict ; il lève llm.LLMIndisponible en cas d'échec.
+    """
+    try:
+        jeton = quota.reserver(qui)
+        if jeton is None:
+            raise HTTPException(
+                429,
+                detail={
+                    "message": "Limite de demandes à l'assistant atteinte pour 24 heures.",
+                    "quota": quota.etat(qui).en_json(),
+                },
+            )
+    except quota.QuotaIndisponible as exc:
+        raise HTTPException(503, "Compteur de demandes indisponible, réessayez plus tard.") from exc
+    try:
+        resultat = appel()
     except llm.LLMIndisponible as exc:
-        return {"texte": None, "erreur": str(exc)}
+        quota.rendre(qui, jeton)  # une demande sans réponse ne compte pas
+        resultat = {"erreur": str(exc)}
+    except Exception:
+        quota.rendre(qui, jeton)
+        raise
+    try:
+        resultat["quota"] = quota.etat(qui).en_json()
+    except quota.QuotaIndisponible:
+        resultat["quota"] = None
+    return resultat
+
+
+def _texte(fonction, *args) -> dict:
+    return {"texte": fonction(*args), "erreur": None}
 
 
 @app.get("/assistant/statut", tags=["assistant"], summary="L'assistant est-il configuré ?")
@@ -429,12 +493,24 @@ def assistant_statut():
     return {"actif": llm.actif(), "modele": llm.modele()}
 
 
+@app.get(
+    "/assistant/quota",
+    tags=["assistant"],
+    summary="Demandes restantes du visiteur (fenêtre glissante de 24 h)",
+)
+def assistant_quota(qui: VisiteurDep):
+    try:
+        return quota.etat(qui).en_json()
+    except quota.QuotaIndisponible as exc:
+        raise HTTPException(503, "Compteur de demandes indisponible.") from exc
+
+
 @app.post(
     "/assistant/expliquer-prix",
     tags=["assistant"],
     summary="Expliquer un prix (vente ou annonce) au regard des ventes comparables",
 )
-def expliquer_prix(f: FiltresDep, demande: DemandePrix):
+def expliquer_prix(f: FiltresDep, demande: DemandePrix, qui: VisiteurDep):
     code = commune_connue(demande.code_commune)
     e = data.evaluer_prix(
         replace(f, zone="loiret"), code, demande.type, demande.surface, demande.prix
@@ -448,10 +524,9 @@ def expliquer_prix(f: FiltresDep, demande: DemandePrix):
         "fiabilité (nombre de ventes). Si la comparaison n'est pas possible, expliquez pourquoi. "
         "Terminez par une piste concrète (marge de négociation, points à vérifier sur le bien)."
     )
-    return {
-        "chiffres": propre(chiffres),
-        **_texte_ou_repli(llm.rediger, consigne, propre(chiffres)),
-    }
+    donnees = propre(chiffres)
+    res = _avec_quota(qui, lambda: _texte(llm.rediger, consigne, donnees))
+    return {"chiffres": donnees, "texte": res.get("texte"), **res}
 
 
 @app.post(
@@ -459,7 +534,7 @@ def expliquer_prix(f: FiltresDep, demande: DemandePrix):
     tags=["assistant"],
     summary="Commentaire personnalisé sur les communes accessibles pour un budget",
 )
-def conseil_budget(f: FiltresDep, demande: DemandeBudget):
+def conseil_budget(f: FiltresDep, demande: DemandeBudget, qui: VisiteurDep):
     outil = {o.__name__: o for o in outils_llm(f)}["communes_pour_budget"]
     chiffres = outil(
         demande.budget_total,
@@ -481,10 +556,9 @@ def conseil_budget(f: FiltresDep, demande: DemandeBudget):
         "où il y a le plus de choix), et, s'il y en a peu ou aucune, quels compromis envisager "
         "(surface, type de bien, élargir la zone) en vous appuyant uniquement sur les chiffres."
     )
-    return {
-        "chiffres": propre(chiffres),
-        **_texte_ou_repli(llm.rediger, consigne, propre(chiffres)),
-    }
+    donnees = propre(chiffres)
+    res = _avec_quota(qui, lambda: _texte(llm.rediger, consigne, donnees))
+    return {"chiffres": donnees, "texte": res.get("texte"), **res}
 
 
 @app.post(
@@ -492,7 +566,7 @@ def conseil_budget(f: FiltresDep, demande: DemandeBudget):
     tags=["assistant"],
     summary="Discuter avec l'assistant (il interroge les données via des outils)",
 )
-def chat(f: FiltresDep, demande: DemandeChat):
+def chat(f: FiltresDep, demande: DemandeChat, qui: VisiteurDep):
     if demande.messages[-1].role != "user":
         raise HTTPException(422, "Le dernier message doit venir de l'utilisateur.")
     contexte = (
@@ -500,10 +574,12 @@ def chat(f: FiltresDep, demande: DemandeChat):
         f"{f.annee_max}. Les communes se désignent par leur code INSEE : utilisez "
         "chercher_commune pour le trouver."
     )
-    try:
+
+    def appel():
         texte, appels = llm.discuter(
             [m.model_dump() for m in demande.messages], contexte, outils_llm(f)
         )
         return {"reponse": texte, "outils": appels, "erreur": None}
-    except llm.LLMIndisponible as exc:
-        return {"reponse": None, "outils": [], "erreur": str(exc)}
+
+    res = _avec_quota(qui, appel)
+    return {"reponse": res.get("reponse"), "outils": res.get("outils", []), **res}

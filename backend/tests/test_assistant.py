@@ -8,7 +8,22 @@ from immo_api import llm
 from immo_api.data import Filtres
 from immo_api.outils import outils
 
-client = TestClient(main.app)
+# Le tableau de bord transmet l'IP de son visiteur ; adresse de documentation (RFC 5737)
+client = TestClient(main.app, headers={"X-Visiteur-IP": "203.0.113.7"})
+
+
+@pytest.fixture(autouse=True)
+def environnement_isole(monkeypatch):
+    """Pas de jeton ni de Redis : quota en mémoire, remis à neuf à chaque test."""
+    from immo_api import quota
+
+    monkeypatch.delenv("ASSISTANT_TOKEN", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    quota._stockage.cache_clear()
+    yield
+    quota._stockage.cache_clear()
+
+
 ORLEANS = "45234"
 PRIX = {"code_commune": ORLEANS, "type": "Appartement", "surface": 60, "prix": 180_000}
 
@@ -72,7 +87,8 @@ def test_chat(monkeypatch):
     r = client.post(
         "/assistant/chat", json={"messages": [{"role": "user", "content": "Prix à Olivet ?"}]}
     ).json()
-    assert r == {"reponse": "Réponse simulée.", "outils": ["chercher_commune"], "erreur": None}
+    assert r["reponse"] == "Réponse simulée." and r["outils"] == ["chercher_commune"]
+    assert r["erreur"] is None and r["quota"]["restantes"] == 19
     fin_assistant = {"messages": [{"role": "assistant", "content": "Bonjour"}]}
     assert client.post("/assistant/chat", json=fin_assistant).status_code == 422
 
