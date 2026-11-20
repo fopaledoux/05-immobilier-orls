@@ -46,7 +46,9 @@ services:
     plan: free
     rootDir: frontend
     buildCommand: pip install uv && uv sync --frozen --no-dev
-    startCommand: .venv/bin/gunicorn app:server --workers 2 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT
+    # 8 threads par worker : les requêtes qui attendent l'API ou Gemini ne bloquent plus
+    # le contrôle de santé de Render (sinon redémarrage « health check timed out »)
+    startCommand: .venv/bin/gunicorn app:server --workers 2 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
     healthCheckPath: /
     buildFilter:
       paths:
