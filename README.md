@@ -14,7 +14,6 @@ Loiret de janvier 2021 à juin 2026 (DVF, DGFiP).
 | | Lien |
 |---|---|
 | **Dashboard** | https://immo-loiret-web.onrender.com |
-| **API** | https://immo-loiret-api.onrender.com |
 | **Documentation de l'API** (Swagger) | https://immo-loiret-api.onrender.com/docs |
 
 > Hébergé sur l'offre gratuite de Render : après 15 minutes sans visite, les services se mettent en
